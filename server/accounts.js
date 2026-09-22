@@ -37,17 +37,38 @@ export function findAccountByName(name) {
   return row(db().prepare("SELECT * FROM accounts WHERE name = ? COLLATE NOCASE").get(String(name).trim()));
 }
 
-/** Resolve by id, exact name (case-insensitive) or unique prefix/substring. */
-export function resolveAccount(ref) {
-  if (!ref) return null;
+const fold = (s) => String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+/** Accent-insensitive lookup by exact name among all accounts (archived included). */
+export function findAccountByFoldedName(name) {
+  const needle = fold(name);
+  return listAccounts().find((a) => fold(a.name) === needle) || null;
+}
+
+/**
+ * Fuzzy resolution like categories: id, exact name, accent-insensitive
+ * equality, then a unique prefix/substring match among active accounts.
+ * Returns { account, candidates } so callers can ask when it is ambiguous.
+ */
+export function resolveAccountFuzzy(ref) {
+  if (!ref) return { account: null, candidates: [] };
   const text = String(ref).trim();
   const byId = getAccount(text);
-  if (byId) return byId;
-  const exact = findAccountByName(text);
-  if (exact) return exact;
-  const needle = text.toLowerCase();
-  const matches = listAccounts({ includeArchived: false }).filter((a) => a.name.toLowerCase().includes(needle));
-  return matches.length === 1 ? matches[0] : null;
+  if (byId) return { account: byId, candidates: [] };
+  const exact = findAccountByName(text) || findAccountByFoldedName(text);
+  if (exact) return { account: exact, candidates: [] };
+  const needle = fold(text);
+  const pool = listAccounts({ includeArchived: false });
+  const starts = pool.filter((a) => fold(a.name).startsWith(needle));
+  if (starts.length === 1) return { account: starts[0], candidates: [] };
+  const contains = pool.filter((a) => fold(a.name).includes(needle) || needle.includes(fold(a.name)));
+  if (contains.length === 1) return { account: contains[0], candidates: [] };
+  return { account: null, candidates: (starts.length ? starts : contains).map((a) => a.name) };
+}
+
+/** Resolve by id, name or unique fuzzy match; null when unknown or ambiguous. */
+export function resolveAccount(ref) {
+  return resolveAccountFuzzy(ref).account;
 }
 
 export function createAccount(input) {
@@ -58,6 +79,17 @@ export function createAccount(input) {
     "INSERT INTO accounts (id, name, type, currency, opening_balance, archived, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(id, data.name, data.type, data.currency, data.opening_balance, data.archived ? 1 : 0, now());
   return getAccount(id);
+}
+
+/**
+ * Create the account or update the existing one with the same name
+ * (case/accent-insensitive). Only provided fields change on update.
+ */
+export function upsertAccount(input) {
+  const existing = findAccountByName(input?.name ?? "") || findAccountByFoldedName(input?.name ?? "");
+  if (!existing) return { created: true, account: createAccount(input) };
+  const { name, ...rest } = input;
+  return { created: false, account: updateAccount(existing.id, rest) };
 }
 
 export function updateAccount(id, patch) {

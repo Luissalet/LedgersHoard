@@ -25,8 +25,13 @@ The server binds to `127.0.0.1` only. If port 5180 is busy it walks up to the ne
 | `LEDGER_PORT` / `PORT` | Preferred port (default `5180`). |
 | `PORT_STRICT=1` | Do not fall back to another port. |
 | `LEDGER_DATA_DIR` | Data folder (default `<repo>/data`, gitignored). Contains `ledgers-hoard.db` and `mcp-token`. |
+| `LEDGER_ALLOWED_HOSTS` | Extra host names accepted behind a tunnel (see below). |
 | `LEDGER_URL` | MCP bridge: base URL of the running app (default `http://127.0.0.1:5180`). Must be local. |
 | `LEDGER_TOKEN_FILE` / `LEDGER_TOKEN` | MCP bridge: where to read the bearer token (default `<data dir>/mcp-token`). |
+
+### Access from your phone (behind a tunnel)
+
+The server binds 127.0.0.1 and only answers requests whose `Host` is `localhost`, `127.0.0.1` or `[::1]`. To reach it from your phone through a tunnel that fronts the app (a private mesh network, a reverse proxy), list the extra host names in `LEDGER_ALLOWED_HOSTS`, comma-separated, exact names or `*.suffix`: `LEDGER_ALLOWED_HOSTS=my-pc.example,*.ts.net`. Port and letter case are ignored, and the `Origin` of API calls must resolve to one of those hosts too (any scheme or port). Cross-site *fetches* are still refused; opening the app from another page (a link, a bookmarklet, the share sheet) is a normal navigation and works.
 
 ## What it does
 
@@ -78,13 +83,14 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 
 `faustus-plugin.json` describes the app for Faustus (health check, launch hint and the MCP command with placeholders).
 
-Tools (16):
+Tools (17):
 
 | Tool | Purpose |
 | --- | --- |
 | `list_accounts` | Accounts with current balance. |
+| `upsert_account` | Create an account or update the one with the same name (case/accent-insensitive): type, currency (default EUR), opening balance as text, archived. |
 | `list_categories` | Categories with budgets, optionally by kind. |
-| `add_entry` | Record a movement: amount as text, kind `expense` / `income` / `auto`, account and category by name (category created only with `create_category: true`). Returns the stored entry and the resolved account/category. |
+| `add_entry` | Record a movement: amount as text, kind `expense` / `income` / `auto`, account and category by name (fuzzy, accent-insensitive; the only account is used automatically; category created only with `create_category: true`). Returns the stored entry and the resolved account/category. |
 | `list_entries` | Filter by dates, account, category, text, tag; limit ≤ 200. |
 | `search_entries` | Free text over counterparty, note, tags and category. |
 | `summary` | Monthly totals, per category with budget, per account. |

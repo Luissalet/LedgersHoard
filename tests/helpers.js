@@ -9,9 +9,9 @@ export function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ledgers-hoard-test-"));
 }
 
-export async function bootServer() {
+export async function bootServer(options = {}) {
   const dataDir = tempDir();
-  const { app, token } = createApp({ dataDir, dataDirConfigured: true, serveStatic: false });
+  const { app, token } = createApp({ dataDir, dataDirConfigured: true, serveStatic: false, ...options });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, "127.0.0.1", () => resolve(s));
   });

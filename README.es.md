@@ -25,8 +25,13 @@ El servidor escucha únicamente en `127.0.0.1`. Si el puerto 5180 está ocupado 
 | `LEDGER_PORT` / `PORT` | Puerto preferido (por defecto `5180`). |
 | `PORT_STRICT=1` | No buscar otro puerto. |
 | `LEDGER_DATA_DIR` | Carpeta de datos (por defecto `<repo>/data`, ignorada por git). Contiene `ledgers-hoard.db` y `mcp-token`. |
+| `LEDGER_ALLOWED_HOSTS` | Nombres de host adicionales aceptados detrás de un túnel (ver más abajo). |
 | `LEDGER_URL` | Puente MCP: URL de la aplicación (por defecto `http://127.0.0.1:5180`). Debe ser local. |
 | `LEDGER_TOKEN_FILE` / `LEDGER_TOKEN` | Puente MCP: de dónde leer el token (por defecto `<datos>/mcp-token`). |
+
+### Acceso desde el móvil (a través de un túnel)
+
+El servidor escucha en 127.0.0.1 y solo responde a peticiones cuyo `Host` sea `localhost`, `127.0.0.1` o `[::1]`. Para entrar desde el móvil a través de un túnel que ponga la aplicación delante (una red privada, un proxy inverso), indicad los nombres de host adicionales en `LEDGER_ALLOWED_HOSTS`, separados por comas, exactos o `*.sufijo`: `LEDGER_ALLOWED_HOSTS=mi-pc.example,*.ts.net`. El puerto y las mayúsculas no importan, y el `Origin` de las llamadas a la API también tiene que corresponder a uno de esos hosts (con cualquier esquema o puerto). Las peticiones *fetch* desde otras webs se siguen rechazando; abrir la aplicación desde otra página (un enlace, un bookmarklet, el menú de compartir) es una navegación normal y funciona.
 
 ## Qué hace
 
@@ -56,13 +61,14 @@ Un traspaso son dos movimientos enlazados por `transfer_id`: cambian los saldos 
 
 `faustus-plugin.json` describe la aplicación para Faustus (comprobación de salud, arranque y comando MCP con marcadores).
 
-Herramientas (16):
+Herramientas (17):
 
 | Herramienta | Uso |
 | --- | --- |
 | `list_accounts` | Cuentas con saldo actual. |
+| `upsert_account` | Crear una cuenta o actualizar la que tenga el mismo nombre (sin distinguir mayúsculas ni acentos): tipo, divisa (EUR por defecto), saldo inicial como texto, archivada. |
 | `list_categories` | Categorías con presupuesto, opcionalmente por tipo. |
-| `add_entry` | Apuntar un movimiento: importe como texto, tipo `expense` / `income` / `auto`, cuenta y categoría por nombre (la categoría solo se crea con `create_category: true`). Devuelve el movimiento guardado y la cuenta y categoría resueltas. |
+| `add_entry` | Apuntar un movimiento: importe como texto, tipo `expense` / `income` / `auto`, cuenta y categoría por nombre (aproximado, sin acentos; si solo hay una cuenta se usa sola; la categoría solo se crea con `create_category: true`). Devuelve el movimiento guardado y la cuenta y categoría resueltas. |
 | `list_entries` | Filtrar por fechas, cuenta, categoría, texto o etiqueta; máximo 200. |
 | `search_entries` | Búsqueda libre en concepto, nota, etiquetas y categoría. |
 | `summary` | Totales del mes, por categoría con presupuesto y por cuenta. |

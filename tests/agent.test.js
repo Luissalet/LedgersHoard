@@ -5,7 +5,7 @@ import path from "node:path";
 import { bootServer, SAMPLE_CSV } from "./helpers.js";
 import { TOOLS } from "../server/agent-tools.js";
 
-const EXPECTED = ["list_accounts", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer"];
+const EXPECTED = ["list_accounts", "upsert_account", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer"];
 
 let s;
 before(async () => { s = await bootServer(); });
@@ -38,9 +38,28 @@ test("agent/call requires the bearer token from the data dir", async () => {
   assert.equal((await s.agent("add_entry", {})).status, 400);
 });
 
+test("upsert_account creates, then updates idempotently by name", async () => {
+  const none = await s.agent("add_entry", { amount: "12,50" });
+  assert.equal(none.status, 400, "no accounts yet");
+  assert.match(none.body.error, /upsert_account/);
+  assert.match((await s.agent("transfer", { from_account: "a", to_account: "b", amount: "1" })).body.error, /upsert_account/);
+  const created = await s.agent("upsert_account", { name: "Banco Ficticio", type: "bank", opening_balance: "1.200,50" });
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  assert.equal(created.body.created, true);
+  assert.equal(created.body.account.opening_balance, 120050);
+  assert.equal(created.body.account.currency, "EUR");
+  assert.equal(created.body.account.balance_text, "1.200,50 €");
+  const again = await s.agent("upsert_account", { name: "banco ficticio", type: "savings" });
+  assert.equal(again.body.created, false);
+  assert.equal(again.body.account.id, created.body.account.id);
+  assert.equal(again.body.account.type, "savings");
+  assert.equal(again.body.account.opening_balance, 120050, "fields not passed are untouched");
+  assert.equal((await s.agent("upsert_account", { name: "X", type: "wallet" })).status, 400);
+  assert.equal((await s.agent("upsert_account", { name: "X", opening_balance: "abc" })).status, 400);
+  assert.equal((await s.agent("list_accounts", {})).body.accounts.length, 1);
+});
+
 test("add_entry resolves account and category and reports the stored entry", async () => {
-  assert.equal((await s.agent("add_entry", { amount: "12,50" })).status, 400, "no accounts yet");
-  await s.call("POST", "/api/accounts", { name: "Banco Ficticio", type: "bank" });
   const r = await s.agent("add_entry", { amount: "12,50", category: "comida", counterparty: "Frutería Ejemplo", tags: ["semana"] });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.entry.amount_cents, -1250);
@@ -61,14 +80,28 @@ test("add_entry resolves account and category and reports the stored entry", asy
   const ambiguous = await s.agent("add_entry", { amount: "3", category: "otros" });
   assert.equal(ambiguous.status, 400);
   assert.deepEqual(ambiguous.body.candidates.sort(), ["Otros gastos", "Otros ingresos"]);
-  await s.call("POST", "/api/accounts", { name: "Efectivo", type: "cash" });
+  const single = await s.agent("add_entry", { amount: "1", counterparty: "única cuenta" });
+  assert.equal(single.body.account.name, "Banco Ficticio", "the only account is used without asking");
+  await s.agent("upsert_account", { name: "Efectivo", type: "cash" });
   const which = await s.agent("add_entry", { amount: "3" });
   assert.equal(which.status, 400);
   assert.deepEqual(which.body.candidates, ["Banco Ficticio", "Efectivo"]);
+  assert.equal((await s.agent("add_entry", { amount: "3", account: "efectívo" })).body.account.name, "Efectivo", "accent-insensitive");
+  assert.equal((await s.agent("add_entry", { amount: "3", account: "efe" })).body.account.name, "Efectivo", "unique prefix");
+  assert.equal((await s.agent("add_entry", { amount: "3", account: "ficticio" })).body.account.name, "Banco Ficticio", "unique substring");
+  const unknown = await s.agent("add_entry", { amount: "3", account: "Tarjeta" });
+  assert.equal(unknown.status, 400);
+  assert.match(unknown.body.error, /upsert_account/);
+  await s.agent("upsert_account", { name: "Efectivo secundario", type: "cash" });
+  const twoCash = await s.agent("add_entry", { amount: "3", account: "efec" });
+  assert.equal(twoCash.status, 400);
+  assert.deepEqual(twoCash.body.candidates.sort(), ["Efectivo", "Efectivo secundario"]);
+  assert.equal((await s.agent("add_entry", { amount: "3", account: "Efectivo" })).body.account.name, "Efectivo", "exact name wins over prefix");
+  await s.agent("upsert_account", { name: "Efectivo secundario", archived: true });
 });
 
 test("read tools: list, search, summary, budget, months, balance", async () => {
-  assert.equal((await s.agent("list_entries", { account: "banco", limit: 10 })).body.items.length, 4);
+  assert.equal((await s.agent("list_entries", { account: "banco", limit: 10 })).body.items.length, 6);
   assert.equal((await s.agent("search_entries", { query: "fruter" })).body.total, 1);
   const budget = await s.agent("set_budget", { category: "Comida", amount: "10" });
   assert.equal(budget.body.category.monthly_budget, 1000);
@@ -80,8 +113,8 @@ test("read tools: list, search, summary, budget, months, balance", async () => {
   const months = await s.agent("months_report", {});
   assert.equal(months.body.months.length, 12);
   const balance = await s.agent("balance", { account: "Banco" });
-  assert.equal(balance.body.balance, -1250 + 150000 + 2000 - 300);
-  assert.equal((await s.agent("balance", {})).body.accounts.length, 2);
+  assert.equal(balance.body.balance, 120050 - 1250 + 150000 + 2000 - 300 - 100 - 300);
+  assert.equal((await s.agent("balance", {})).body.accounts.length, 3);
   assert.equal((await s.agent("set_budget", { category: "Nómina", amount: "10" })).status, 400);
 });
 
@@ -93,7 +126,7 @@ test("update, transfer, upsert_category and delete", async () => {
   const t = await s.agent("transfer", { from_account: "Banco", to_account: "Efectivo", amount: "200" });
   assert.equal(t.status, 200, JSON.stringify(t.body));
   assert.equal(t.body.out.amount_cents, -20000);
-  assert.equal((await s.agent("balance", { account: "Efectivo" })).body.balance, 20000);
+  assert.equal((await s.agent("balance", { account: "Efectivo" })).body.balance, 20000 - 300 - 300 - 300, "transfer in minus the three cash entries");
   const up = await s.agent("upsert_category", { name: "Mascotas", monthly_budget: "50" });
   assert.equal(up.body.created, true);
   const again = await s.agent("upsert_category", { name: "mascotas", color: "#123456" });

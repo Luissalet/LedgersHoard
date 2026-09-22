@@ -12,6 +12,7 @@ import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
 
 export const AGENT_INSTRUCTIONS = `Ledger's Hoard is the user's household ledger (accounts, categories, entries, budgets, CSV imports). Amounts are integer cents in tool results; format them for the user as "12,50 €".
 Read before you write: call list_accounts and list_categories once per session before add_entry, transfer or set_budget.
+Accounts are created with upsert_account (idempotent by name, case/accent-insensitive). If add_entry or transfer report that there are no accounts, call upsert_account first and retry. When exactly one account exists, add_entry uses it without asking.
 Never guess an amount, a date or an account. If the user did not say the amount, ask. Negative = expense, positive = income.
 When an account or category is ambiguous the tool returns candidates: ask the user which one instead of picking. Create a category only when the user asks for it (create_category: true).
 After add_entry, update_entry or transfer, report the stored entry back verbatim (date, amount, account, category, counterparty).
@@ -23,18 +24,28 @@ const fail = (message, extra = {}) => { throw Object.assign(new Error(message), 
 const monthField = z.string().regex(/^\d{4}-\d{2}$/, "Use YYYY-MM").optional();
 const amountField = z.union([z.string(), z.number()]).describe('Amount as the user wrote it: "12,50", "1.234,56", "-3", "12.5"');
 
+const NO_ACCOUNTS = "No hay cuentas todavía. Crea una con upsert_account (por ejemplo name: \"Efectivo\", type: \"cash\") y repite la operación.";
+
+/**
+ * Account by name/id with fuzzy matching (accent-insensitive, unique prefix or
+ * substring). With no reference: the only active account is used; several
+ * active accounts or none → error with candidates so the assistant asks.
+ */
 function resolveAccountOrFail(ref, { required = true } = {}) {
   const active = accounts.listAccounts({ includeArchived: false });
+  if (!active.length) {
+    const archived = accounts.listAccounts().map((a) => a.name);
+    fail(archived.length ? `Todas las cuentas están archivadas (${archived.join(", ")}). Recupera una con upsert_account (archived: false) o crea otra.` : NO_ACCOUNTS, { candidates: [] });
+  }
   if (!ref) {
     if (active.length === 1) return active[0];
     if (!required) return null;
-    fail(active.length ? `Indica la cuenta. Cuentas: ${active.map((a) => a.name).join(", ")}.` : "No hay cuentas; crea una en la aplicación.", { candidates: active.map((a) => a.name) });
+    fail(`Indica la cuenta. Cuentas: ${active.map((a) => a.name).join(", ")}.`, { candidates: active.map((a) => a.name) });
   }
-  const found = accounts.resolveAccount(ref);
-  if (found) return found;
-  const needle = String(ref).toLowerCase();
-  const candidates = active.filter((a) => a.name.toLowerCase().includes(needle)).map((a) => a.name);
-  fail(`Cuenta "${ref}" no encontrada${candidates.length ? `; ¿quieres decir ${candidates.join(" o ")}?` : `. Cuentas: ${active.map((a) => a.name).join(", ")}.`}`, { candidates });
+  const { account, candidates } = accounts.resolveAccountFuzzy(ref);
+  if (account) return account;
+  if (candidates.length) fail(`Cuenta "${ref}" ambigua: ${candidates.join(", ")}. Pregunta al usuario cuál.`, { candidates });
+  fail(`Cuenta "${ref}" no encontrada. Cuentas: ${active.map((a) => a.name).join(", ") || "ninguna"}. Si el usuario quiere crearla, usa upsert_account.`, { candidates: [] });
 }
 
 function resolveCategoryOrFail(ref, { kind = null, create = false } = {}) {
@@ -76,13 +87,37 @@ export const TOOLS = [
     z.object({ include_archived: z.boolean().default(false) }), RO,
     ({ include_archived }) => ({ accounts: accounts.accountBalances().filter((a) => include_archived || !a.archived).map((a) => ({ ...a, balance_text: formatCents(a.balance, a.currency === "EUR" ? "€" : a.currency) })) })),
 
+  tool("upsert_account",
+    'Create an account, or update the one with the same name (case/accent-insensitive). type: cash|bank|card|savings|other (default bank). currency defaults to EUR. opening_balance as text ("150", "1.200,50"): the real balance when you start tracking. Idempotent: calling it again with the same name updates only the fields you pass. Returns { created, account }.\nSinónimos: crear cuenta, nueva cuenta, cuenta de efectivo, cuenta del banco, tarjeta, cuenta de ahorro, saldo inicial, renombrar cuenta, archivar cuenta',
+    z.object({
+      name: z.string().trim().min(1).max(80),
+      type: z.enum(accounts.ACCOUNT_TYPES).optional(),
+      currency: z.string().trim().length(3).optional(),
+      opening_balance: amountField.optional(),
+      archived: z.boolean().optional(),
+    }), { idempotentHint: true },
+    (a) => {
+      const input = { name: a.name };
+      if (a.type) input.type = a.type;
+      if (a.currency) input.currency = a.currency.toUpperCase();
+      if (a.archived !== undefined) input.archived = a.archived;
+      if (a.opening_balance !== undefined) {
+        const cents = parseAmount(a.opening_balance);
+        if (cents === null) fail(`Saldo inicial no reconocido: "${a.opening_balance}".`);
+        input.opening_balance = cents;
+      }
+      const out = accounts.upsertAccount(input);
+      const balance = accounts.accountBalance(out.account.id);
+      return { ...out, account: { ...out.account, balance, balance_text: formatCents(balance) } };
+    }),
+
   tool("list_categories",
     "List expense and income categories with monthly budget (cents) and colour. Call before add_entry to pick the right category name.\nSinónimos: categorías, tipos de gasto, presupuesto por categoría, comida, casa, transporte, ocio, nómina",
     z.object({ kind: z.enum(["expense", "income"]).optional(), include_archived: z.boolean().default(false) }), RO,
     ({ kind, include_archived }) => ({ categories: categories.listCategories({ includeArchived: include_archived }).filter((c) => !kind || c.kind === kind) })),
 
   tool("add_entry",
-    'Record a money movement. amount is text parsed as the user wrote it ("12,50", "1.234,56", "-3"). kind: expense (stored negative), income (positive) or auto (sign from the text; a positive amount with an income category is income, otherwise expense). account by name or id (omit when there is only one). category by name (fuzzy; created only if create_category is true). Returns the stored entry with the resolved account and category; repeat it to the user verbatim.\nSinónimos: apuntar, anotar, gasto, ingreso, he pagado, he gastado, me han pagado, nómina, compra, registrar movimiento, añadir gasto',
+    'Record a money movement. amount is text parsed as the user wrote it ("12,50", "1.234,56", "-3"). kind: expense (stored negative), income (positive) or auto (sign from the text; a positive amount with an income category is income, otherwise expense). account by name or id, fuzzy (accent-insensitive, unique prefix); omit it when there is only one account and it is used automatically. If there are no accounts the error says to call upsert_account first. category by name (fuzzy; created only if create_category is true). Returns the stored entry with the resolved account and category; repeat it to the user verbatim.\nSinónimos: apuntar, anotar, gasto, ingreso, he pagado, he gastado, me han pagado, nómina, compra, registrar movimiento, añadir gasto',
     z.object({
       amount: amountField,
       kind: z.enum(["expense", "income", "auto"]).default("auto"),

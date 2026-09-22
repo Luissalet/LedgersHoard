@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { init, close } from "../server/db.js";
 import { seedCategories, createCategory, updateCategory, listCategories, resolveCategory, DEFAULT_CATEGORIES } from "../server/categories.js";
-import { createAccount, accountBalance, resolveAccount } from "../server/accounts.js";
+import { createAccount, accountBalance, resolveAccount, resolveAccountFuzzy, upsertAccount } from "../server/accounts.js";
 import { createEntry, createTransfer, deleteEntry, listEntries } from "../server/entries.js";
 import { summary, budgetStatus, monthsReport } from "../server/reports.js";
 import { tempDir } from "./helpers.js";
@@ -72,6 +72,24 @@ test("account balances include opening balance and transfers", () => {
   assert.equal(resolveAccount("banco").id, bank.id);
   assert.equal(resolveAccount("BANCO FICTICIO").id, bank.id);
   assert.equal(resolveAccount("nada"), null);
+});
+
+test("accounts resolve fuzzily and upsert by folded name", () => {
+  const { account, created } = upsertAccount({ name: "Ahorro Vacación", type: "savings", opening_balance: 500 });
+  assert.equal(created, true);
+  assert.equal(resolveAccount("ahorro vacacion").id, account.id, "accent-insensitive equality");
+  assert.equal(resolveAccount("ahorro").id, account.id, "unique prefix");
+  assert.equal(resolveAccount("vacaci").id, account.id, "unique substring");
+  const updated = upsertAccount({ name: "AHORRO VACACION", currency: "USD" });
+  assert.equal(updated.created, false);
+  assert.equal(updated.account.id, account.id);
+  assert.equal(updated.account.currency, "USD");
+  assert.equal(updated.account.opening_balance, 500, "untouched fields kept");
+  const ambiguous = resolveAccountFuzzy("o");
+  assert.equal(ambiguous.account, null);
+  assert.deepEqual(ambiguous.candidates.sort(), ["Ahorro Vacación", "Banco Ficticio", "Efectivo"]);
+  assert.equal(resolveAccount("Efectivo").id, cash.id, "exact name wins");
+  assert.equal(resolveAccountFuzzy("zzz").candidates.length, 0);
 });
 
 test("months report fills empty months", () => {
