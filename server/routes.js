@@ -9,6 +9,7 @@ import { previewImport, commitImport, listImports } from "./imports.js";
 import { parseAmount } from "./money.js";
 import { thisMonth, isMonth, addMonths } from "./dates.js";
 import { getSetting, setSetting, dataDir } from "./db.js";
+import { manifest, serviceWorker } from "./manifest.js";
 
 const notFound = (res) => res.status(404).json({ error: "No existe." });
 const monthQuery = z.string().regex(/^\d{4}-\d{2}$/).optional();
@@ -108,4 +109,15 @@ export function installRoutes(app, { version, dataDirConfigured }) {
   app.get("/api/imports", (req, res) => res.json(listImports()));
   app.post("/api/imports/preview", (req, res) => res.json(previewImport(req.body || {})));
   app.post("/api/imports/commit", (req, res) => res.status(201).json(commitImport(req.body || {})));
+
+  // PWA manifest and service worker.
+  app.get("/manifest.webmanifest", (req, res) => {
+    res.set("Content-Type", "application/manifest+json");
+    res.send(JSON.stringify(manifest()));
+  });
+  app.get("/sw.js", (req, res) => {
+    res.set("Content-Type", "application/javascript");
+    res.set("Service-Worker-Allowed", "/");
+    res.send(serviceWorker());
+  });
 }
