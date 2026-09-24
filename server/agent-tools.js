@@ -83,12 +83,12 @@ const RO = { readOnlyHint: true, idempotentHint: true };
 
 export const TOOLS = [
   tool("list_accounts",
-    "List the user's accounts (cash, bank, card, savings, other) with currency and current balance in cents. Call before adding entries.\nSinónimos: cuentas, saldo, banco, efectivo, tarjeta, ahorros, cuánto tengo, dinero en el banco",
+    "List accounts with currency and balance; call before adding entries. Sinónimos: cuentas, saldo, mis cuentas\nList the user's accounts (cash, bank, card, savings, other) with currency and current balance in cents. Call before adding entries.\nSinónimos: cuentas, saldo, banco, efectivo, tarjeta, ahorros, cuánto tengo, dinero en el banco",
     z.object({ include_archived: z.boolean().default(false) }), RO,
     ({ include_archived }) => ({ accounts: accounts.accountBalances().filter((a) => include_archived || !a.archived).map((a) => ({ ...a, balance_text: formatCents(a.balance, a.currency === "EUR" ? "€" : a.currency) })) })),
 
   tool("upsert_account",
-    'Create an account, or update the one with the same name (case/accent-insensitive). type: cash|bank|card|savings|other (default bank). currency defaults to EUR. opening_balance as text ("150", "1.200,50"): the real balance when you start tracking. Idempotent: calling it again with the same name updates only the fields you pass. Returns { created, account }.\nSinónimos: crear cuenta, nueva cuenta, cuenta de efectivo, cuenta del banco, tarjeta, cuenta de ahorro, saldo inicial, renombrar cuenta, archivar cuenta',
+    'Create an account or update the one with that name (idempotent). Sinónimos: crear cuenta, editar cuenta\nCreate an account, or update the one with the same name (case/accent-insensitive). type: cash|bank|card|savings|other (default bank). currency defaults to EUR. opening_balance as text ("150", "1.200,50"): the real balance when you start tracking. Idempotent: calling it again with the same name updates only the fields you pass. Returns { created, account }.\nSinónimos: crear cuenta, nueva cuenta, cuenta de efectivo, cuenta del banco, tarjeta, cuenta de ahorro, saldo inicial, renombrar cuenta, archivar cuenta',
     z.object({
       name: z.string().trim().min(1).max(80),
       type: z.enum(accounts.ACCOUNT_TYPES).optional(),
@@ -112,12 +112,12 @@ export const TOOLS = [
     }),
 
   tool("list_categories",
-    "List expense and income categories with monthly budget (cents) and colour. Call before add_entry to pick the right category name.\nSinónimos: categorías, tipos de gasto, presupuesto por categoría, comida, casa, transporte, ocio, nómina",
+    "List expense and income categories with budget and colour. Sinónimos: categorías, en qué gasto\nList expense and income categories with monthly budget (cents) and colour. Call before add_entry to pick the right category name.\nSinónimos: categorías, tipos de gasto, presupuesto por categoría, comida, casa, transporte, ocio, nómina",
     z.object({ kind: z.enum(["expense", "income"]).optional(), include_archived: z.boolean().default(false) }), RO,
     ({ kind, include_archived }) => ({ categories: categories.listCategories({ includeArchived: include_archived }).filter((c) => !kind || c.kind === kind) })),
 
   tool("add_entry",
-    'Record a money movement. amount is text parsed as the user wrote it ("12,50", "1.234,56", "-3"). kind: expense (stored negative), income (positive) or auto (sign from the text; a positive amount with an income category is income, otherwise expense). account by name or id, fuzzy (accent-insensitive, unique prefix); omit it when there is only one account and it is used automatically. If there are no accounts the error says to call upsert_account first. category by name (fuzzy; created only if create_category is true). Returns the stored entry with the resolved account and category; repeat it to the user verbatim.\nSinónimos: apuntar, anotar, gasto, ingreso, he pagado, he gastado, me han pagado, nómina, compra, registrar movimiento, añadir gasto',
+    'Record a money movement: amount as text, account and category by name. Sinónimos: apunta, gasté, anota\nRecord a money movement. amount is text parsed as the user wrote it ("12,50", "1.234,56", "-3"). kind: expense (stored negative), income (positive) or auto (sign from the text; a positive amount with an income category is income, otherwise expense). account by name or id, fuzzy (accent-insensitive, unique prefix); omit it when there is only one account and it is used automatically. If there are no accounts the error says to call upsert_account first. category by name (fuzzy; created only if create_category is true). Returns the stored entry with the resolved account and category; repeat it to the user verbatim.\nSinónimos: apuntar, anotar, gasto, ingreso, he pagado, he gastado, me han pagado, nómina, compra, registrar movimiento, añadir gasto',
     z.object({
       amount: amountField,
       kind: z.enum(["expense", "income", "auto"]).default("auto"),
@@ -143,7 +143,7 @@ export const TOOLS = [
     }),
 
   tool("list_entries",
-    "List entries with filters: from/to (YYYY-MM-DD), account (name or id), category (name or id, or 'none'), text (counterparty/note), tag, limit (max 200), order asc|desc. Amounts in cents, negative = expense.\nSinónimos: movimientos, listar gastos, qué he gastado, extracto, historial, últimos movimientos, gastos de este mes",
+    "List entries with filters: dates, account, category, text, tag. Sinónimos: movimientos, gastos de, qué pagué\nList entries with filters: from/to (YYYY-MM-DD), account (name or id), category (name or id, or 'none'), text (counterparty/note), tag, limit (max 200), order asc|desc. Amounts in cents, negative = expense.\nSinónimos: movimientos, listar gastos, qué he gastado, extracto, historial, últimos movimientos, gastos de este mes",
     z.object({
       from: z.string().optional(), to: z.string().optional(), account: z.string().optional(), category: z.string().optional(),
       text: z.string().max(200).optional(), tag: z.string().max(40).optional(),
@@ -164,12 +164,12 @@ export const TOOLS = [
     (a) => { const out = entries.listEntries({ text: a.query, from: a.from, to: a.to, limit: a.limit }); return { ...out, items: out.items.map(present) }; }),
 
   tool("summary",
-    "Monthly summary (month YYYY-MM, default current): income, expense, net, per category spent vs budget, and per account balance. Transfers are excluded from totals.\nSinónimos: resumen del mes, cuánto llevo gastado, balance, cómo voy, cuánto he ingresado, gastos del mes",
+    "Monthly summary: income, expense, net, per category and account. Sinónimos: resumen del mes, cuánto gasté\nMonthly summary (month YYYY-MM, default current): income, expense, net, per category spent vs budget, and per account balance. Transfers are excluded from totals.\nSinónimos: resumen del mes, cuánto llevo gastado, balance, cómo voy, cuánto he ingresado, gastos del mes",
     z.object({ month: monthField }), RO,
     ({ month }) => { const s = reports.summary(month || thisMonth()); return { ...s, income_text: formatCents(s.income), expense_text: formatCents(s.expense), net_text: formatCents(s.net) }; }),
 
   tool("budget_status",
-    "Budget check for a month (default current): per expense category budget, spent, remaining, pct and over flag, plus a one-line verdict.\nSinónimos: presupuesto, me paso, cuánto me queda, límite de gasto, voy bien, presupuesto de comida",
+    "Budget check for a month: spent, remaining, over flag per category. Sinónimos: presupuesto, me paso\nBudget check for a month (default current): per expense category budget, spent, remaining, pct and over flag, plus a one-line verdict.\nSinónimos: presupuesto, me paso, cuánto me queda, límite de gasto, voy bien, presupuesto de comida",
     z.object({ month: monthField }), RO,
     ({ month }) => reports.budgetStatus(month || thisMonth())),
 
@@ -184,7 +184,7 @@ export const TOOLS = [
     }),
 
   tool("balance",
-    "Balance of one account (name or id) at a date (YYYY-MM-DD, default today), opening balance included. Without account returns every account.\nSinónimos: saldo, cuánto tengo, dinero en la cuenta, saldo del banco, saldo en efectivo",
+    "Balance of one account (or all) at a date. Sinónimos: saldo, cuánto tengo, balance de la cuenta\nBalance of one account (name or id) at a date (YYYY-MM-DD, default today), opening balance included. Without account returns every account.\nSinónimos: saldo, cuánto tengo, dinero en la cuenta, saldo del banco, saldo en efectivo",
     z.object({ account: z.string().optional(), at: z.string().optional() }), RO,
     ({ account, at }) => {
       const date = at ? parseDate(at) || fail(`Fecha no válida: "${at}".`) : today();
@@ -195,7 +195,7 @@ export const TOOLS = [
     }),
 
   tool("update_entry",
-    "Edit an existing entry by id: amount (text), kind, date, account, category, counterparty, note, tags. Only provided fields change.\nSinónimos: corregir, cambiar importe, editar movimiento, modificar gasto, poner categoría, mover a otra cuenta",
+    "Edit an existing entry by id; only provided fields change. Sinónimos: corrige el apunte, cambia el gasto\nEdit an existing entry by id: amount (text), kind, date, account, category, counterparty, note, tags. Only provided fields change.\nSinónimos: corregir, cambiar importe, editar movimiento, modificar gasto, poner categoría, mover a otra cuenta",
     z.object({
       id: z.string().min(1), amount: amountField.optional(), kind: z.enum(["expense", "income", "auto"]).default("auto"),
       date: z.string().optional(), account: z.string().optional(), category: z.string().nullable().optional(), create_category: z.boolean().default(false),
@@ -222,7 +222,7 @@ export const TOOLS = [
     ({ id }) => { const entry = entries.getEntry(id) || fail("El movimiento no existe.", { status: 404 }); entries.deleteEntry(id); return { deleted: present(entry) }; }),
 
   tool("upsert_category",
-    "Create a category or update it by name/id: kind (expense|income), monthly_budget (text amount or null), color, parent (name or id), archived. Idempotent on name.\nSinónimos: crear categoría, nueva categoría, renombrar categoría, archivar categoría, subcategoría",
+    "Create or update a category by name: kind, budget, colour, parent. Sinónimos: nueva categoría, editar\nCreate a category or update it by name/id: kind (expense|income), monthly_budget (text amount or null), color, parent (name or id), archived. Idempotent on name.\nSinónimos: crear categoría, nueva categoría, renombrar categoría, archivar categoría, subcategoría",
     z.object({
       name: z.string().trim().min(1).max(80), new_name: z.string().trim().min(1).max(80).optional(), kind: z.enum(["expense", "income"]).optional(),
       monthly_budget: amountField.nullable().optional(), color: z.string().max(20).nullable().optional(), parent: z.string().nullable().optional(), archived: z.boolean().optional(),
@@ -241,7 +241,7 @@ export const TOOLS = [
     }),
 
   tool("set_budget",
-    'Set the monthly budget of an expense category (category name or id, amount as text like "250" or "250,00"; null removes it). Returns the category and the current month status.\nSinónimos: presupuesto, límite mensual, poner presupuesto, tope de gasto, quiero gastar como máximo',
+    'Set the monthly budget of an expense category (null removes it). Sinónimos: presupuesto de, límite mensual\nSet the monthly budget of an expense category (category name or id, amount as text like "250" or "250,00"; null removes it). Returns the category and the current month status.\nSinónimos: presupuesto, límite mensual, poner presupuesto, tope de gasto, quiero gastar como máximo',
     z.object({ category: z.string().min(1), amount: amountField.nullable() }), { idempotentHint: true },
     ({ category, amount }) => {
       const cat = resolveCategoryOrFail(category, { kind: "expense" });
@@ -252,12 +252,12 @@ export const TOOLS = [
     }),
 
   tool("import_csv_preview",
-    "Analyse bank statement CSV text (; or , separated, quoted fields, DD/MM/YYYY or YYYY-MM-DD dates, Spanish decimal comma, optional debit/credit columns). Returns detected columns, guessed mapping (column names for date, amount or debit+credit, description, counterparty, decimal), first 20 parsed rows and how many are duplicates for the given account. Nothing is written.\nSinónimos: importar extracto, csv del banco, previsualizar importación, extracto bancario, cargar movimientos",
+    "Analyse a bank statement CSV and propose a column mapping; nothing written. Sinónimos: importar extracto, CSV\nAnalyse bank statement CSV text (; or , separated, quoted fields, DD/MM/YYYY or YYYY-MM-DD dates, Spanish decimal comma, optional debit/credit columns). Returns detected columns, guessed mapping (column names for date, amount or debit+credit, description, counterparty, decimal), first 20 parsed rows and how many are duplicates for the given account. Nothing is written.\nSinónimos: importar extracto, csv del banco, previsualizar importación, extracto bancario, cargar movimientos",
     z.object({ csv: z.string().min(1), mapping: mappingSchema.optional(), account: z.string().optional() }), RO,
     ({ csv, mapping, account }) => previewImport({ csv, mapping, account_id: account ? resolveAccountOrFail(account).id : "" })),
 
   tool("import_csv_commit",
-    "Import CSV rows into an account (name or id) using the mapping from import_csv_preview. Rows whose hash (date|amount|description|account) already exists are skipped, so re-running is safe. Returns added/skipped counts and the first entries.\nSinónimos: importar, confirmar importación, cargar extracto, meter movimientos del banco",
+    "Import CSV rows into an account with a mapping; duplicates skipped. Sinónimos: importar movimientos, extracto\nImport CSV rows into an account (name or id) using the mapping from import_csv_preview. Rows whose hash (date|amount|description|account) already exists are skipped, so re-running is safe. Returns added/skipped counts and the first entries.\nSinónimos: importar, confirmar importación, cargar extracto, meter movimientos del banco",
     z.object({ csv: z.string().min(1), mapping: mappingSchema.optional(), account: z.string().min(1), filename: z.string().max(200).default(""), category: z.string().optional() }), { idempotentHint: true },
     ({ csv, mapping, account, filename, category }) => {
       const acc = resolveAccountOrFail(account);
@@ -267,7 +267,7 @@ export const TOOLS = [
     }),
 
   tool("transfer",
-    'Move money between two accounts (names or ids): amount as text ("200"), date default today, note. Creates two linked entries excluded from income/expense totals.\nSinónimos: transferencia, traspaso, sacar dinero, pasar dinero, mover de cuenta, retirar del cajero, ingresar en el banco',
+    'Move money between two accounts (two linked entries, not in totals). Sinónimos: transferencia, pasar dinero\nMove money between two accounts (names or ids): amount as text ("200"), date default today, note. Creates two linked entries excluded from income/expense totals.\nSinónimos: transferencia, traspaso, sacar dinero, pasar dinero, mover de cuenta, retirar del cajero, ingresar en el banco',
     z.object({ from_account: z.string().min(1), to_account: z.string().min(1), amount: amountField, date: z.string().optional(), note: z.string().max(2000).default("") }), {},
     (a) => {
       const from = resolveAccountOrFail(a.from_account);
