@@ -9,6 +9,7 @@ import { init as initDb } from "./db.js";
 import { seedCategories } from "./categories.js";
 import { installRoutes } from "./routes.js";
 import { installAgentRoutes, writeToken } from "./agent-routes.js";
+import * as family from "./hoard-link.js";
 import { createGuard } from "./guard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,9 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
   initDb(dataDir);
   seedCategories();
   const token = writeToken(dataDir);
+  // Hoard Link 0.4: this app on the family bus (agent.call events, calls to
+  // siblings through the hub, the hoard_link block in /api/health).
+  family.configure({ app: "ledger", dataDir });
 
   const app = express();
   app.disable("x-powered-by");

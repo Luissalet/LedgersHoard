@@ -9,7 +9,8 @@ after(async () => { await s.stop(); });
 test("health and state bootstrap", async () => {
   const health = await s.call("GET", "/api/health");
   assert.equal(health.status, 200);
-  assert.deepEqual(Object.keys(health.body).sort(), ["dataDirConfigured", "service", "version"]);
+  assert.deepEqual(Object.keys(health.body).sort(), ["dataDirConfigured", "hoard_link", "service", "version"]);
+  assert.equal(typeof health.body.hoard_link.events, "boolean");
   assert.equal(health.body.service, "ledgers-hoard");
   const state = await s.call("GET", "/api/state");
   assert.equal(state.status, 200);

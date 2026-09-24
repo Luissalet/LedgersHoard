@@ -10,6 +10,7 @@ import { parseAmount } from "./money.js";
 import { thisMonth, isMonth, addMonths } from "./dates.js";
 import { getSetting, setSetting, dataDir } from "./db.js";
 import { manifest, serviceWorker } from "./manifest.js";
+import * as family from "./hoard-link.js";
 
 const notFound = (res) => res.status(404).json({ error: "No existe." });
 const monthQuery = z.string().regex(/^\d{4}-\d{2}$/).optional();
@@ -33,7 +34,7 @@ export function getSettings() {
 
 export function installRoutes(app, { version, dataDirConfigured }) {
   app.get("/api/health", (req, res) => {
-    res.json({ service: "ledgers-hoard", version, dataDirConfigured });
+    res.json({ service: "ledgers-hoard", version, dataDirConfigured, hoard_link: family.healthBlock() });
   });
 
   app.get("/api/state", (req, res) => {
