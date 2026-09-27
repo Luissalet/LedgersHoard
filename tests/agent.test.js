@@ -67,6 +67,8 @@ test("add_entry resolves account and category and reports the stored entry", asy
   assert.equal(r.body.entry.amount, "-12,50 €");
   assert.equal(r.body.entry.source, "agent");
   assert.equal(r.body.account.name, "Banco Ficticio");
+  assert.equal(r.body.account.balance, 118800, "post-write balance, not the opening balance");
+  assert.equal(r.body.account.balance_text, "1.188,00 €");
   assert.equal(r.body.category.name, "Comida");
   const income = await s.agent("add_entry", { amount: "1.500,00", category: "nómina", date: "05/09/2026" });
   assert.equal(income.body.entry.amount_cents, 150000, "positive amount with income category stays income");

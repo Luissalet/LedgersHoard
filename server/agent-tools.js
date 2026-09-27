@@ -12,10 +12,12 @@ import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
 
 export const AGENT_INSTRUCTIONS = `Ledger's Hoard is the user's household ledger (accounts, categories, entries, budgets, CSV imports). Amounts are integer cents in tool results; format them for the user as "12,50 €".
 Read before you write: call list_accounts and list_categories once per session before add_entry, transfer or set_budget.
+If the user names an account, pass that exact account in add_entry or transfer. On a missing-account error, reread the user's request before asking; never ask for an account already supplied.
 Accounts are created with upsert_account (idempotent by name, case/accent-insensitive). If add_entry or transfer report that there are no accounts, call upsert_account first and retry. When exactly one account exists, add_entry uses it without asking.
 Never guess an amount, a date or an account. If the user did not say the amount, ask. Negative = expense, positive = income.
 When an account or category is ambiguous the tool returns candidates: ask the user which one instead of picking. Create a category only when the user asks for it (create_category: true).
 After add_entry, update_entry or transfer, report the stored entry back verbatim (date, amount, account, category, counterparty).
+Never report an account balance read before a write as the balance after it. If the write reply was lost or the user asks for the latest balance, call balance after the write and use that result.
 Months are YYYY-MM, dates are YYYY-MM-DD. Default month is the current one. delete_entry is irreversible: confirm first.
 Imports: run import_csv_preview, show the mapping and the duplicate count, and only then import_csv_commit with the same csv and mapping. Duplicates are skipped by hash, so committing twice is safe.`;
 
@@ -122,7 +124,7 @@ export const TOOLS = [
       amount: amountField,
       kind: z.enum(["expense", "income", "auto"]).default("auto"),
       date: z.string().optional().describe("YYYY-MM-DD or DD/MM/YYYY; default today"),
-      account: z.string().optional().describe("Account name or id"),
+      account: z.string().optional().describe("Account name or id. Required whenever the user names an account; copy their choice here. Omit only if they did not name one and there is exactly one account."),
       category: z.string().optional().describe("Category name (fuzzy) or id"),
       create_category: z.boolean().default(false),
       counterparty: z.string().max(200).default("").describe("Shop, person or payer"),
@@ -139,7 +141,8 @@ export const TOOLS = [
         date, amount_cents: signedAmount(cents, a.kind, category), account_id: account.id, category_id: category?.id || null,
         counterparty: a.counterparty, note: a.note, tags: a.tags, source: "agent",
       });
-      return { entry: present(entry), account: { id: account.id, name: account.name }, category: category ? { id: category.id, name: category.name, kind: category.kind } : null };
+      const balance = accounts.accountBalance(account.id);
+      return { entry: present(entry), account: { id: account.id, name: account.name, balance, balance_text: formatCents(balance) }, category: category ? { id: category.id, name: category.name, kind: category.kind } : null };
     }),
 
   tool("list_entries",

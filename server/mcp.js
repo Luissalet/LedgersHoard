@@ -23,8 +23,11 @@ for (const tool of TOOLS)
     tool.name,
     { description: tool.description, inputSchema: tool.schema, annotations: tool.annotations },
     async (args) => {
+      let requestStarted = false;
+      let bodyReceived = false;
       try {
         const token = process.env.LEDGER_TOKEN || fs.readFileSync(tokenFile, "utf8").trim();
+        requestStarted = true;
         const response = await fetch(new URL("/api/agent/call", base), {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -32,14 +35,20 @@ for (const tool of TOOLS)
           signal: AbortSignal.timeout(90000),
         });
         const body = await response.json();
+        bodyReceived = true;
         if (!response.ok) throw Object.assign(Error(body.error || `Error ${response.status}`), { candidates: body.candidates });
         return { content: [{ type: "text", text: JSON.stringify(body) }] };
       } catch (e) {
         const offline = e.code === "ENOENT" || e.message === "fetch failed";
+        const uncertain = requestStarted && !bodyReceived && !tool.annotations.readOnlyHint;
         return {
           isError: true,
           content: [{ type: "text", text: JSON.stringify({
-            error: offline ? "Abre Ledger's Hoard (npm start) para acceder a tus datos." : e.message,
+            error: uncertain
+              ? "No se recibió la respuesta. El movimiento puede haberse aplicado: consulta el estado antes de repetirlo."
+              : offline ? "Abre Ledger's Hoard (npm start) para acceder a tus datos." : e.message,
+            ...(uncertain ? { status: "outcome_unknown", outcome_unknown: true,
+              reconcile_action: "read_current_state_before_retry" } : {}),
             ...(e.candidates ? { candidates: e.candidates } : {}),
           }) }],
         };
