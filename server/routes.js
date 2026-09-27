@@ -5,6 +5,7 @@ import * as accounts from "./accounts.js";
 import * as categories from "./categories.js";
 import * as entries from "./entries.js";
 import * as reports from "./reports.js";
+import { recurringCandidates } from "./recurring.js";
 import { previewImport, commitImport, listImports } from "./imports.js";
 import { parseAmount } from "./money.js";
 import { thisMonth, isMonth, addMonths } from "./dates.js";
@@ -104,6 +105,11 @@ export function installRoutes(app, { version, dataDirConfigured }) {
     const from = monthQuery.parse(req.query.from) || addMonths(to, -11);
     if (!isMonth(from) || !isMonth(to) || from > to) return res.status(400).json({ error: "Rango de meses no válido." });
     res.json({ from, to, months: reports.monthsReport(from, to) });
+  });
+  app.get("/api/reports/recurring", (req, res) => {
+    const to = monthQuery.parse(req.query.to) || thisMonth();
+    const months = req.query.months === undefined ? 18 : Number(req.query.months);
+    res.json(recurringCandidates({ to, months }));
   });
 
   // Imports

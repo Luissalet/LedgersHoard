@@ -5,7 +5,7 @@ import path from "node:path";
 import { bootServer, SAMPLE_CSV } from "./helpers.js";
 import { TOOLS } from "../server/agent-tools.js";
 
-const EXPECTED = ["list_accounts", "upsert_account", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer"];
+const EXPECTED = ["list_accounts", "upsert_account", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "recurring_candidates", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer"];
 
 let s;
 before(async () => { s = await bootServer(); });

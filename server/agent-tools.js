@@ -6,6 +6,7 @@ import * as accounts from "./accounts.js";
 import * as categories from "./categories.js";
 import * as entries from "./entries.js";
 import * as reports from "./reports.js";
+import { recurringCandidates } from "./recurring.js";
 import { previewImport, commitImport, mappingSchema } from "./imports.js";
 import { parseAmount, formatCents } from "./money.js";
 import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
@@ -185,6 +186,11 @@ export const TOOLS = [
       if (!isMonth(start) || !isMonth(end) || start > end) fail("Rango de meses no válido.");
       return { from: start, to: end, months: reports.monthsReport(start, end) };
     }),
+
+  tool("recurring_candidates",
+    "Find likely recurring payments and observed amount changes.\nRead-only monthly/quarterly candidates with dated evidence and baseline_occurrences. price_change means charged amount changed, not proof of a tariff or subscription; a variable bill's cause is unknown. Report those limits and cite exact dates/amounts. Defaults to the last 18 months.\nSinónimos: pagos recurrentes, suscripciones, recibos periódicos, cuotas, qué ha subido de precio, gastos fijos, renovaciones",
+    z.object({ to: monthField, months: z.number().int().min(3).max(60).default(18) }), RO,
+    (a) => recurringCandidates(a)),
 
   tool("balance",
     "Balance of one account (or all) at a date.\nBalance of one account (name or id) at a date (YYYY-MM-DD, default today), opening balance included. Without account returns every account.\nSinónimos: saldo, cuánto tengo, dinero en la cuenta, saldo del banco, saldo en efectivo",

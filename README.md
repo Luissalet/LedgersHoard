@@ -64,6 +64,7 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 | `GET /api/summary?month=YYYY-MM` | Income, expense, net, per-category spent vs budget, per-account balance. |
 | `GET /api/budget?month=` | Budget status with a one-line verdict. |
 | `GET /api/reports/months?from=&to=` | Per-month income / expense / net (defaults to the last 12 months). |
+| `GET /api/reports/recurring?to=YYYY-MM&months=18` | Read-only monthly/quarterly payment candidates with dated charges and observed amount changes. |
 | `POST /api/imports/preview` | `{ csv, mapping?, account_id? }` → columns, guessed mapping, first 20 rows, duplicate count. |
 | `POST /api/imports/commit` | Same body plus `account_id` (required) → inserts with `import_hash = sha1(date\|amount\|description\|account)`; duplicates skipped. |
 | `GET /api/imports` | Import history. |
@@ -85,7 +86,7 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 
 `faustus-plugin.json` describes the app for Faustus (health check, launch hint and the MCP command with placeholders).
 
-Tools (17):
+Tools (18):
 
 | Tool | Purpose |
 | --- | --- |
@@ -98,6 +99,7 @@ Tools (17):
 | `summary` | Monthly totals, per category with budget, per account. |
 | `budget_status` | Budget vs spent per category with `over` flags and a human verdict. |
 | `months_report` | Per-month income / expense / net between two months. |
+| `recurring_candidates` | Likely recurring expenses, typical/latest amounts and evidence; separates stable price changes from variable bills. It does not prove a subscription or tariff change. |
 | `balance` | Balance of one account (or all) at a date. |
 | `update_entry` | Edit an entry's fields. |
 | `delete_entry` | Delete an entry (destructive; removes both halves of a transfer). |

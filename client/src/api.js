@@ -38,6 +38,7 @@ export const api = {
   transfer: (data) => request("POST", "/api/transfers", data),
   summary: (month) => request("GET", `/api/summary${qs({ month })}`),
   months: (from, to) => request("GET", `/api/reports/months${qs({ from, to })}`),
+  recurring: (to, months = 18) => request("GET", `/api/reports/recurring${qs({ to, months })}`),
   imports: {
     list: () => request("GET", "/api/imports"),
     preview: (data) => request("POST", "/api/imports/preview", data),
