@@ -7,6 +7,7 @@ import * as categories from "./categories.js";
 import * as entries from "./entries.js";
 import * as reports from "./reports.js";
 import { recurringCandidates } from "./recurring.js";
+import * as forecasts from "./forecast.js";
 import { previewImport, commitImport, mappingSchema } from "./imports.js";
 import { parseAmount, formatCents } from "./money.js";
 import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
@@ -20,7 +21,8 @@ When an account or category is ambiguous the tool returns candidates: ask the us
 After add_entry, update_entry or transfer, report the stored entry back verbatim (date, amount, account, category, counterparty).
 Never report an account balance read before a write as the balance after it. If the write reply was lost or the user asks for the latest balance, call balance after the write and use that result.
 Months are YYYY-MM, dates are YYYY-MM-DD. Default month is the current one. delete_entry is irreversible: confirm first.
-Imports: run import_csv_preview, show the mapping and the duplicate count, and only then import_csv_commit with the same csv and mapping. Duplicates are skipped by hash, so committing twice is safe.`;
+Imports: run import_csv_preview, show the mapping and the duplicate count, and only then import_csv_commit with the same csv and mapping. Duplicates are skipped by hash, so committing twice is safe.
+Forecasts: use cash_forecast for what-if questions. Saved scenarios are assumptions, never recorded entries; a recurring candidate is not automatically a confirmed future charge.`;
 
 const fail = (message, extra = {}) => { throw Object.assign(new Error(message), { status: 400, ...extra }); };
 
@@ -191,6 +193,56 @@ export const TOOLS = [
     "Find likely recurring payments and observed amount changes.\nRead-only monthly/quarterly candidates with dated evidence and baseline_occurrences. price_change means charged amount changed, not proof of a tariff or subscription; a variable bill's cause is unknown. Report those limits and cite exact dates/amounts. Defaults to the last 18 months.\nSinónimos: pagos recurrentes, suscripciones, recibos periódicos, cuotas, qué ha subido de precio, gastos fijos, renovaciones",
     z.object({ to: monthField, months: z.number().int().min(3).max(60).default(18) }), RO,
     (a) => recurringCandidates(a)),
+
+  tool("list_scenarios",
+    "List saved cash-flow what-if scenarios and their assumptions.\nSinónimos: escenarios, simulaciones guardadas, planes futuros",
+    z.object({}), RO, () => ({ scenarios: forecasts.listScenarios() })),
+
+  tool("create_scenario",
+    "Create a named cash-flow what-if scenario, without changing transactions.\nSinónimos: crear escenario, nueva simulación, plan de gastos futuros",
+    z.object({ name: z.string().trim().min(1).max(100) }), {},
+    (a) => forecasts.createScenario(a)),
+
+  tool("get_scenario",
+    "Read a saved scenario and the ids of its assumptions.\nSinónimos: ver escenario, detalles de simulación, supuestos guardados",
+    z.object({ scenario_id: z.string().min(1) }), RO,
+    ({ scenario_id }) => forecasts.getScenario(scenario_id) || fail("Escenario no encontrado.", { status: 404 })),
+
+  tool("add_scenario_line",
+    "Add a one-time, monthly or quarterly cash-flow assumption to a scenario.\nSigned amount as text: positive income, negative expense. No real transaction is created.\nSinónimos: añadir supuesto, gasto futuro, ingreso previsto, pago mensual, simulación",
+    z.object({ scenario_id: z.string().min(1), account: z.string().min(1), label: z.string().trim().min(1).max(120),
+      amount: amountField, start_month: z.string().refine(isMonth), end_month: z.string().refine(isMonth).nullable().optional(),
+      cadence: z.enum(["once", "monthly", "quarterly"]).default("once") }), {},
+    (a) => forecasts.addScenarioLine(a.scenario_id, { account_id: resolveAccountOrFail(a.account).id,
+      label: a.label, amount_cents: parseAmountOrFail(a.amount), start_month: a.start_month,
+      end_month: a.end_month ?? null, cadence: a.cadence })),
+
+  tool("update_scenario_line",
+    "Edit a saved what-if assumption by id without changing recorded entries.\nSinónimos: corregir supuesto, cambiar gasto futuro, editar previsión",
+    z.object({ scenario_id: z.string().min(1), line_id: z.string().min(1), account: z.string().optional(),
+      label: z.string().trim().min(1).max(120).optional(), amount: amountField.optional(),
+      start_month: z.string().refine(isMonth).optional(), end_month: z.string().refine(isMonth).nullable().optional(),
+      cadence: z.enum(["once", "monthly", "quarterly"]).optional() }), { idempotentHint: true },
+    (a) => {
+      const patch = {};
+      if (a.account) patch.account_id = resolveAccountOrFail(a.account).id;
+      if (a.label !== undefined) patch.label = a.label;
+      if (a.amount !== undefined) patch.amount_cents = parseAmountOrFail(a.amount);
+      if (a.start_month !== undefined) patch.start_month = a.start_month;
+      if (a.end_month !== undefined) patch.end_month = a.end_month;
+      if (a.cadence !== undefined) patch.cadence = a.cadence;
+      return forecasts.updateScenarioLine(a.scenario_id, a.line_id, patch) || fail("Supuesto no encontrado.", { status: 404 });
+    }),
+
+  tool("delete_scenario_line",
+    "Remove a saved what-if assumption by id; recorded entries remain unchanged.\nSinónimos: quitar supuesto, borrar gasto previsto, eliminar simulación",
+    z.object({ scenario_id: z.string().min(1), line_id: z.string().min(1) }), { destructiveHint: true, idempotentHint: true },
+    ({ scenario_id, line_id }) => ({ ok: forecasts.deleteScenarioLine(scenario_id, line_id) })),
+
+  tool("cash_forecast",
+    "Project monthly balances from recorded data and an optional saved scenario.\nHorizon 1–24 months. Lines show their origin; no scenario means only recorded balances.\nSinónimos: previsión, futuro, proyección de saldo, qué pasaría si, simular gastos, flujo de caja",
+    z.object({ scenario_id: z.string().optional(), from: z.string().refine(isMonth).optional(), months: z.number().int().min(1).max(24).default(6) }), RO,
+    (a) => forecasts.forecast(a)),
 
   tool("balance",
     "Balance of one account (or all) at a date.\nBalance of one account (name or id) at a date (YYYY-MM-DD, default today), opening balance included. Without account returns every account.\nSinónimos: saldo, cuánto tengo, dinero en la cuenta, saldo del banco, saldo en efectivo",

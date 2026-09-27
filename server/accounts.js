@@ -110,6 +110,8 @@ export function updateAccount(id, patch) {
 export function deleteAccount(id) {
   const used = db().prepare("SELECT COUNT(*) AS n FROM entries WHERE account_id = ?").get(id).n;
   if (used > 0) throw Object.assign(new Error("La cuenta tiene movimientos; archívala en lugar de borrarla."), { status: 409 });
+  const forecastUses = db().prepare("SELECT COUNT(*) AS n FROM scenario_lines WHERE account_id = ?").get(id).n;
+  if (forecastUses > 0) throw Object.assign(new Error("La cuenta figura en escenarios; elimina esos supuestos o archívala."), { status: 409 });
   return db().prepare("DELETE FROM accounts WHERE id = ?").run(id).changes > 0;
 }
 

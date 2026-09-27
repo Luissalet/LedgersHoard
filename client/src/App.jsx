@@ -7,6 +7,7 @@ import Cuentas from "./pages/Cuentas.jsx";
 import Categorias from "./pages/Categorias.jsx";
 import Importar from "./pages/Importar.jsx";
 import Informes from "./pages/Informes.jsx";
+import Prevision from "./pages/Prevision.jsx";
 import Ajustes from "./pages/Ajustes.jsx";
 
 const PAGES = [
@@ -16,6 +17,7 @@ const PAGES = [
   { path: "categorias", label: "Categorías", icon: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", component: Categorias },
   { path: "importar", label: "Importar", icon: "M12 4v12m0 0l-4-4m4 4l4-4M4 20h16", component: Importar },
   { path: "informes", label: "Informes", icon: "M4 20V10m5 10V4m5 16v-8m5 8V7", component: Informes },
+  { path: "prevision", label: "Previsión", icon: "M3 18l6-6 4 3 8-9M17 6h4v4", component: Prevision },
   { path: "ajustes", label: "Ajustes", icon: "M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2", component: Ajustes },
 ];
 

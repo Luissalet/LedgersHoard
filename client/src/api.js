@@ -39,6 +39,17 @@ export const api = {
   summary: (month) => request("GET", `/api/summary${qs({ month })}`),
   months: (from, to) => request("GET", `/api/reports/months${qs({ from, to })}`),
   recurring: (to, months = 18) => request("GET", `/api/reports/recurring${qs({ to, months })}`),
+  forecast: (scenario_id, from, months = 6) => request("GET", `/api/forecast${qs({ scenario_id, from, months })}`),
+  scenarios: {
+    list: () => request("GET", "/api/scenarios"),
+    get: (id) => request("GET", `/api/scenarios/${id}`),
+    create: (data) => request("POST", "/api/scenarios", data),
+    update: (id, data) => request("PATCH", `/api/scenarios/${id}`, data),
+    remove: (id) => request("DELETE", `/api/scenarios/${id}`),
+    addLine: (id, data) => request("POST", `/api/scenarios/${id}/lines`, data),
+    updateLine: (id, lineId, data) => request("PATCH", `/api/scenarios/${id}/lines/${lineId}`, data),
+    removeLine: (id, lineId) => request("DELETE", `/api/scenarios/${id}/lines/${lineId}`),
+  },
   imports: {
     list: () => request("GET", "/api/imports"),
     preview: (data) => request("POST", "/api/imports/preview", data),

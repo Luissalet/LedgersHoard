@@ -43,6 +43,7 @@ Once opened through the tunnel, the browser offers to install it (PWA).
 - **Categorías** — expense and income categories with optional parent, colour and a monthly budget editable in place. A Spanish default set (Comida, Casa, Transporte, Ocio, Salud, Suscripciones, Ropa, Regalos, Otros gastos; Nómina, Otros ingresos) is seeded the first time the table is empty.
 - **Importar** — paste or choose a bank CSV. Delimiter (`;`, `,`, tab), header row, dates (`DD/MM/YYYY`, `YYYY-MM-DD`, `DD-MM-YYYY`), Spanish decimal comma and separate debit/credit columns are detected; the mapping can be corrected with selects; the preview shows the first 20 rows and how many are duplicates; commit reports added / skipped.
 - **Informes** — 12-month income vs expense bars and expense-by-category donut, both inline SVG with a table view.
+- **Previsión** — save named what-if scenarios with one-time, monthly or quarterly income/expense assumptions, edit them, and compare recorded vs projected balances for 3–24 months. Observed recurring candidates can fill the assumption form for review. Transfers are already reflected in recorded balances; scenario lines never create entries. Different currencies are shown per account rather than added together.
 - **Ajustes** — currency symbol; data folder and version shown read-only.
 
 All money is stored as integer cents. User input like `12,50`, `12.5`, `-3`, `1.234,56` or `1,234.56` is parsed by `shared/money.js` (`parseAmount`), which the UI, the API and the tools all use.
@@ -65,6 +66,9 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 | `GET /api/budget?month=` | Budget status with a one-line verdict. |
 | `GET /api/reports/months?from=&to=` | Per-month income / expense / net (defaults to the last 12 months). |
 | `GET /api/reports/recurring?to=YYYY-MM&months=18` | Read-only monthly/quarterly payment candidates with dated charges and observed amount changes. |
+| `GET/POST /api/scenarios`, `GET/PATCH/DELETE /api/scenarios/:id` | List, create, read, rename and delete saved scenarios. |
+| `POST/PATCH/DELETE /api/scenarios/:id/lines[/:lineId]` | Add, edit and remove signed one-time or monthly assumptions. |
+| `GET /api/forecast?scenario_id=&from=YYYY-MM&months=6` | Recorded and projected monthly balances by account, with the scenario lines that contributed. |
 | `POST /api/imports/preview` | `{ csv, mapping?, account_id? }` → columns, guessed mapping, first 20 rows, duplicate count. |
 | `POST /api/imports/commit` | Same body plus `account_id` (required) → inserts with `import_hash = sha1(date\|amount\|description\|account)`; duplicates skipped. |
 | `GET /api/imports` | Import history. |
@@ -86,7 +90,7 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 
 `faustus-plugin.json` describes the app for Faustus (health check, launch hint and the MCP command with placeholders).
 
-Tools (18):
+Tools (25):
 
 | Tool | Purpose |
 | --- | --- |
@@ -100,6 +104,9 @@ Tools (18):
 | `budget_status` | Budget vs spent per category with `over` flags and a human verdict. |
 | `months_report` | Per-month income / expense / net between two months. |
 | `recurring_candidates` | Likely recurring expenses, typical/latest amounts and evidence; separates stable price changes from variable bills. It does not prove a subscription or tariff change. |
+| `list_scenarios`, `get_scenario`, `create_scenario` | Browse and create saved what-if scenarios. |
+| `add_scenario_line`, `update_scenario_line`, `delete_scenario_line` | Add or correct future assumptions without altering real entries. |
+| `cash_forecast` | Compare recorded balances with a scenario for 1–24 months. |
 | `balance` | Balance of one account (or all) at a date. |
 | `update_entry` | Edit an entry's fields. |
 | `delete_entry` | Delete an entry (destructive; removes both halves of a transfer). |

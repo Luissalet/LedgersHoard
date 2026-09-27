@@ -5,6 +5,7 @@ import * as accounts from "./accounts.js";
 import * as categories from "./categories.js";
 import * as entries from "./entries.js";
 import * as reports from "./reports.js";
+import * as forecast from "./forecast.js";
 import { recurringCandidates } from "./recurring.js";
 import { previewImport, commitImport, listImports } from "./imports.js";
 import { parseAmount } from "./money.js";
@@ -111,6 +112,30 @@ export function installRoutes(app, { version, dataDirConfigured }) {
     const months = req.query.months === undefined ? 18 : Number(req.query.months);
     res.json(recurringCandidates({ to, months }));
   });
+
+  // Editable what-if scenarios; projections leave recorded entries untouched.
+  app.get("/api/scenarios", (req, res) => res.json(forecast.listScenarios()));
+  app.post("/api/scenarios", (req, res) => res.status(201).json(forecast.createScenario(req.body || {})));
+  app.get("/api/scenarios/:id", (req, res) => {
+    const out = forecast.getScenario(req.params.id);
+    return out ? res.json(out) : notFound(res);
+  });
+  app.patch("/api/scenarios/:id", (req, res) => {
+    const out = forecast.updateScenario(req.params.id, req.body || {});
+    return out ? res.json(out) : notFound(res);
+  });
+  app.delete("/api/scenarios/:id", (req, res) => res.json({ ok: forecast.deleteScenario(req.params.id) }));
+  app.post("/api/scenarios/:id/lines", (req, res) => res.status(201).json(forecast.addScenarioLine(req.params.id, withCents(req.body))));
+  app.patch("/api/scenarios/:id/lines/:lineId", (req, res) => {
+    const out = forecast.updateScenarioLine(req.params.id, req.params.lineId, withCents(req.body));
+    return out ? res.json(out) : notFound(res);
+  });
+  app.delete("/api/scenarios/:id/lines/:lineId", (req, res) => res.json({ ok: forecast.deleteScenarioLine(req.params.id, req.params.lineId) }));
+  app.get("/api/forecast", (req, res) => res.json(forecast.forecast({
+    scenario_id: req.query.scenario_id || null,
+    from: req.query.from || undefined,
+    months: req.query.months === undefined ? 6 : Number(req.query.months),
+  })));
 
   // Imports
   app.get("/api/imports", (req, res) => res.json(listImports()));

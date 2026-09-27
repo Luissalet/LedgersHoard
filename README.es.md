@@ -43,6 +43,7 @@ Una vez abierta a través del túnel, el navegador ofrece instalarla (PWA).
 - **Categorías** — de gasto o de ingreso, con padre opcional, color y presupuesto mensual editable al pulsar. La primera vez se crea un juego por defecto (Comida, Casa, Transporte, Ocio, Salud, Suscripciones, Ropa, Regalos, Otros gastos; Nómina, Otros ingresos).
 - **Importar** — pegad o elegid el CSV del banco. Se detectan separador (`;`, `,`, tabulador), cabecera, fechas (`DD/MM/YYYY`, `YYYY-MM-DD`, `DD-MM-YYYY`), coma decimal y columnas separadas de cargo/abono; el mapeo se corrige con desplegables; la vista previa enseña las 20 primeras filas y cuántas están duplicadas; al importar se informa de añadidas y omitidas.
 - **Informes** — barras de ingresos frente a gastos de los últimos 12 meses y donut de gasto por categoría, en SVG y con vista de tabla.
+- **Previsión** — escenarios guardados con ingresos y gastos hipotéticos puntuales, mensuales o trimestrales. Se pueden editar y comparar los saldos registrados y previstos de 3 a 24 meses. Los pagos periódicos detectados rellenan el formulario para revisarlos antes de añadirlos. Los supuestos no crean movimientos reales; las distintas divisas se muestran por separado.
 - **Ajustes** — símbolo de moneda; carpeta de datos y versión solo de lectura.
 
 Todos los importes se guardan en céntimos enteros. Entradas como `12,50`, `12.5`, `-3`, `1.234,56` o `1,234.56` las interpreta `shared/money.js` (`parseAmount`), común a la interfaz, la API y las herramientas.

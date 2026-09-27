@@ -63,6 +63,25 @@ const MIGRATIONS = [
     value TEXT NOT NULL
   );
   `,
+  `
+  CREATE TABLE scenarios (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE scenario_lines (
+    id TEXT PRIMARY KEY,
+    scenario_id TEXT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES accounts(id),
+    label TEXT NOT NULL,
+    start_month TEXT NOT NULL,
+    end_month TEXT NULL,
+    cadence TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX scenario_lines_scenario ON scenario_lines(scenario_id);
+  `,
 ];
 
 let connection = null;
