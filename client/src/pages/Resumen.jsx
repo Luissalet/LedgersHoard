@@ -53,6 +53,7 @@ export default function Resumen() {
   const [month, setMonth] = useState(thisMonth());
   const [summary, setSummary] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [mail, setMail] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -60,6 +61,12 @@ export default function Resumen() {
     Promise.all([api.summary(month), api.entries.list({ from: `${month}-01`, to: monthEnd(month), limit: 8 })])
       .then(([s, r]) => { if (alive) { setSummary(s); setRecent(r.items); setError(null); } })
       .catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, [month]);
+
+  useEffect(() => {
+    let alive = true;
+    api.mail.spending(month).then((m) => alive && setMail(m)).catch(() => alive && setMail(null));
     return () => { alive = false; };
   }, [month]);
 
@@ -77,6 +84,15 @@ export default function Resumen() {
             <Tile label="Neto del mes" value={formatCents(summary.net, symbol)} tone={summary.net < 0 ? "expense" : "income"} />
             <Tile label="Saldo total" value={formatCents(total, symbol)} />
           </div>
+          {mail && mail.count > 0 && (
+            <a href="#/correo" className="panel mb-5 flex flex-wrap items-baseline justify-between gap-2 no-underline" style={{ color: "inherit" }}>
+              <span>
+                <span className="label" style={{ color: "var(--supporting-ink)" }}>{month === thisMonth() ? "Del correo este mes" : `Del correo en ${monthLabel(month)}`}</span>
+                <span className="help ml-2 text-[12px]">{mail.count} {mail.count === 1 ? "cobro apuntado" : "cobros apuntados"}{mail.by_merchant[0] ? ` · el mayor, ${mail.by_merchant[0].merchant}` : ""}</span>
+              </span>
+              <span className="num text-[18px] font-semibold expense">{formatCents(mail.spent_cents, symbol)}</span>
+            </a>
+          )}
           <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
             <div className="space-y-4">
               <Section title="Presupuestos por categoría" aside={summary.budget.total > 0 && <span className="help num">{formatCents(summary.budget.spent, symbol)} de {formatCents(summary.budget.total, symbol)}</span>}>

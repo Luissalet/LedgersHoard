@@ -4,8 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { bootServer, SAMPLE_CSV } from "./helpers.js";
 import { TOOLS } from "../server/agent-tools.js";
+import { thisMonth } from "../server/dates.js";
 
-const EXPECTED = ["list_accounts", "upsert_account", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "recurring_candidates", "list_scenarios", "create_scenario", "get_scenario", "add_scenario_line", "update_scenario_line", "delete_scenario_line", "cash_forecast", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer"];
+const EXPECTED = ["list_accounts", "upsert_account", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "recurring_candidates", "list_scenarios", "create_scenario", "get_scenario", "add_scenario_line", "update_scenario_line", "delete_scenario_line", "cash_forecast", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer", "mail_status", "mail_scan", "mail_review", "mail_accept", "mail_ignore", "mail_undo", "mail_reset", "mail_paste", "subscriptions_list", "subscription_update", "subscriptions_upcoming", "mail_spending", "ledger_notifications"];
 
 let s;
 before(async () => { s = await bootServer(); });
@@ -70,9 +71,11 @@ test("add_entry resolves account and category and reports the stored entry", asy
   assert.equal(r.body.account.balance, 118800, "post-write balance, not the opening balance");
   assert.equal(r.body.account.balance_text, "1.188,00 €");
   assert.equal(r.body.category.name, "Comida");
-  const income = await s.agent("add_entry", { amount: "1.500,00", category: "nómina", date: "05/09/2026" });
+  // the first of the current month: the summary and balance checks below must not depend on today's date
+  const [year, month] = thisMonth().split("-");
+  const income = await s.agent("add_entry", { amount: "1.500,00", category: "nómina", date: `01/${month}/${year}` });
   assert.equal(income.body.entry.amount_cents, 150000, "positive amount with income category stays income");
-  assert.equal(income.body.entry.date, "2026-09-05");
+  assert.equal(income.body.entry.date, `${year}-${month}-01`);
   const forced = await s.agent("add_entry", { amount: "20", kind: "income", account: "banco" });
   assert.equal(forced.body.entry.amount_cents, 2000);
   const missing = await s.agent("add_entry", { amount: "3", category: "Videojuegos" });

@@ -88,7 +88,7 @@ export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete
       <td>{entry.account_name}</td>
       <td>{isTransfer ? <span className="chip">Traspaso</span> : entry.category_name || <span className="help">—</span>}</td>
       <td className="truncate" title={entry.counterparty}>{entry.counterparty || <span className="help">(sin concepto)</span>}
-        {entry.source !== "manual" && <span className="chip ml-2">{entry.source === "agent" ? "asistente" : "importado"}</span>}
+        {entry.source !== "manual" && <span className="chip ml-2">{entry.source === "agent" ? "asistente" : entry.source === "mail" ? "correo" : "importado"}</span>}
       </td>
       <td className="hidden truncate lg:table-cell" title={entry.note}>{entry.note}</td>
       <td className="whitespace-nowrap">

@@ -8,6 +8,8 @@ import Categorias from "./pages/Categorias.jsx";
 import Importar from "./pages/Importar.jsx";
 import Informes from "./pages/Informes.jsx";
 import Prevision from "./pages/Prevision.jsx";
+import Correo from "./pages/Correo.jsx";
+import Suscripciones from "./pages/Suscripciones.jsx";
 import Ajustes from "./pages/Ajustes.jsx";
 
 const PAGES = [
@@ -18,6 +20,8 @@ const PAGES = [
   { path: "importar", label: "Importar", icon: "M12 4v12m0 0l-4-4m4 4l4-4M4 20h16", component: Importar },
   { path: "informes", label: "Informes", icon: "M4 20V10m5 10V4m5 16v-8m5 8V7", component: Informes },
   { path: "prevision", label: "Previsión", icon: "M3 18l6-6 4 3 8-9M17 6h4v4", component: Prevision },
+  { path: "correo", label: "Correo", icon: "M3 6h18v12H3zM3 7l9 7 9-7", component: Correo },
+  { path: "suscripciones", label: "Suscripciones", icon: "M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M18 3v4h-4M6 21v-4h4", component: Suscripciones },
   { path: "ajustes", label: "Ajustes", icon: "M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2", component: Ajustes },
 ];
 
@@ -25,7 +29,7 @@ const AppContext = createContext(null);
 export const useApp = () => useContext(AppContext);
 
 function useHashRoute() {
-  const read = () => (window.location.hash.replace(/^#\/?/, "").split("/")[0] || "resumen");
+  const read = () => (window.location.hash.replace(/^#\/?/, "").split("?")[0].split("/")[0] || "resumen");
   const [route, setRoute] = useState(read);
   useEffect(() => {
     const onChange = () => setRoute(read());

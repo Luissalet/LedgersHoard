@@ -67,3 +67,34 @@ export function monthsBetween(from, to) {
   }
   return out;
 }
+
+const parts = (date) => date.split("-").map(Number);
+const iso = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+
+/** Add n days to "YYYY-MM-DD". */
+export function addDays(date, n) {
+  const [y, m, d] = parts(date);
+  const out = new Date(Date.UTC(y, m - 1, d + n));
+  return iso(out.getUTCFullYear(), out.getUTCMonth() + 1, out.getUTCDate());
+}
+
+/** Whole days from a to b (b - a), both "YYYY-MM-DD". */
+export function daysBetween(a, b) {
+  const [ya, ma, da] = parts(a);
+  const [yb, mb, db] = parts(b);
+  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86_400_000);
+}
+
+/** Add n months to "YYYY-MM-DD", clamping the day (31 Jan + 1 month = 28/29 Feb). */
+export function addMonthsToDate(date, n) {
+  const [y, m, d] = parts(date);
+  const month = addMonths(`${y}-${pad(m)}`, n);
+  const last = Number(monthRange(month).to.slice(8));
+  return `${month}-${pad(Math.min(d, last))}`;
+}
+
+/** "YYYY-MM-DD" in the local time zone for a Date or epoch milliseconds. */
+export function localDate(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

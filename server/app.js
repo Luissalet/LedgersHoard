@@ -8,6 +8,8 @@ import { createRequire } from "node:module";
 import { init as initDb } from "./db.js";
 import { seedCategories } from "./categories.js";
 import { installRoutes } from "./routes.js";
+import { installMailRoutes } from "./mail-routes.js";
+import { createMailScheduler } from "./mail-scheduler.js";
 import { installAgentRoutes, writeToken } from "./agent-routes.js";
 import * as family from "./hoard-link.js";
 import { createGuard } from "./guard.js";
@@ -22,7 +24,7 @@ export function resolveDataDir(env = process.env) {
   return env.LEDGER_DATA_DIR || path.join(ROOT, "data");
 }
 
-export function createApp({ dataDir, dataDirConfigured = false, serveStatic = true, allowedHosts = process.env.LEDGER_ALLOWED_HOSTS } = {}) {
+export function createApp({ dataDir, dataDirConfigured = false, serveStatic = true, allowedHosts = process.env.LEDGER_ALLOWED_HOSTS, startScheduler = false } = {}) {
   initDb(dataDir);
   seedCategories();
   const token = writeToken(dataDir);
@@ -35,6 +37,7 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
   app.use(createGuard(allowedHosts));
   app.use(express.json({ limit: "10mb" }));
   installRoutes(app, { version, dataDirConfigured });
+  installMailRoutes(app);
   installAgentRoutes(app, { token });
   app.all(/^\/api(\/.*)?$/, (req, res) => res.status(404).json({ error: "Ruta no encontrada." }));
 
@@ -53,5 +56,8 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
       : err.message;
     res.status(status).json({ error: message });
   });
-  return { app, token, version };
+  // The mail scan runs in this process (first scan 30 s after start); tests leave it off.
+  const scheduler = createMailScheduler();
+  if (startScheduler) scheduler.start();
+  return { app, token, version, scheduler };
 }

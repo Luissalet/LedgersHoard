@@ -11,8 +11,10 @@ import * as forecasts from "./forecast.js";
 import { previewImport, commitImport, mappingSchema } from "./imports.js";
 import { parseAmount, formatCents } from "./money.js";
 import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
+import { fail, monthField, amountField, resolveAccountOrFail, resolveCategoryOrFail, parseAmountOrFail, signedAmount, present, tool, RO } from "./agent-helpers.js";
+import { MAIL_TOOLS, MAIL_INSTRUCTIONS } from "./mail-tools.js";
 
-export const AGENT_INSTRUCTIONS = `Ledger's Hoard is the user's household ledger (accounts, categories, entries, budgets, CSV imports). Amounts are integer cents in tool results; format them for the user as "12,50 €".
+const BASE_INSTRUCTIONS = `Ledger's Hoard is the user's household ledger (accounts, categories, entries, budgets, CSV imports). Amounts are integer cents in tool results; format them for the user as "12,50 €".
 Read before you write: call list_accounts and list_categories once per session before add_entry, transfer or set_budget.
 If the user names an account, pass that exact account in add_entry or transfer. On a missing-account error, reread the user's request before asking; never ask for an account already supplied.
 Accounts are created with upsert_account (idempotent by name, case/accent-insensitive). If add_entry or transfer report that there are no accounts, call upsert_account first and retry. When exactly one account exists, add_entry uses it without asking.
@@ -23,68 +25,7 @@ Never report an account balance read before a write as the balance after it. If 
 Months are YYYY-MM, dates are YYYY-MM-DD. Default month is the current one. delete_entry is irreversible: confirm first.
 Imports: run import_csv_preview, show the mapping and the duplicate count, and only then import_csv_commit with the same csv and mapping. Duplicates are skipped by hash, so committing twice is safe.
 Forecasts: use cash_forecast for what-if questions. Saved scenarios are assumptions, never recorded entries; a recurring candidate is not automatically a confirmed future charge.`;
-
-const fail = (message, extra = {}) => { throw Object.assign(new Error(message), { status: 400, ...extra }); };
-
-const monthField = z.string().regex(/^\d{4}-\d{2}$/, "Use YYYY-MM").optional();
-const amountField = z.union([z.string(), z.number()]).describe('Amount as the user wrote it: "12,50", "1.234,56", "-3", "12.5"');
-
-const NO_ACCOUNTS = "No hay cuentas todavía. Crea una con upsert_account (por ejemplo name: \"Efectivo\", type: \"cash\") y repite la operación.";
-
-/**
- * Account by name/id with fuzzy matching (accent-insensitive, unique prefix or
- * substring). With no reference: the only active account is used; several
- * active accounts or none → error with candidates so the assistant asks.
- */
-function resolveAccountOrFail(ref, { required = true } = {}) {
-  const active = accounts.listAccounts({ includeArchived: false });
-  if (!active.length) {
-    const archived = accounts.listAccounts().map((a) => a.name);
-    fail(archived.length ? `Todas las cuentas están archivadas (${archived.join(", ")}). Recupera una con upsert_account (archived: false) o crea otra.` : NO_ACCOUNTS, { candidates: [] });
-  }
-  if (!ref) {
-    if (active.length === 1) return active[0];
-    if (!required) return null;
-    fail(`Indica la cuenta. Cuentas: ${active.map((a) => a.name).join(", ")}.`, { candidates: active.map((a) => a.name) });
-  }
-  const { account, candidates } = accounts.resolveAccountFuzzy(ref);
-  if (account) return account;
-  if (candidates.length) fail(`Cuenta "${ref}" ambigua: ${candidates.join(", ")}. Pregunta al usuario cuál.`, { candidates });
-  fail(`Cuenta "${ref}" no encontrada. Cuentas: ${active.map((a) => a.name).join(", ") || "ninguna"}. Si el usuario quiere crearla, usa upsert_account.`, { candidates: [] });
-}
-
-function resolveCategoryOrFail(ref, { kind = null, create = false } = {}) {
-  if (!ref) return null;
-  const { category, candidates } = categories.resolveCategory(ref, kind);
-  if (category) return category;
-  if (candidates.length) fail(`Categoría "${ref}" ambigua: ${candidates.join(", ")}. Pregunta al usuario cuál.`, { candidates });
-  if (create) return categories.createCategory({ name: String(ref).trim(), kind: kind || "expense" });
-  fail(`Categoría "${ref}" no existe. Pide confirmación y repite con create_category: true, o usa una existente: ${categories.listCategories({ includeArchived: false }).map((c) => c.name).join(", ")}.`, { candidates: [] });
-}
-
-function parseAmountOrFail(text) {
-  const cents = parseAmount(text);
-  if (cents === null || cents === 0) fail(`Importe no reconocido: "${text}". Usa por ejemplo "12,50" o "-3".`);
-  return cents;
-}
-
-function signedAmount(cents, kind, category) {
-  if (kind === "expense") return -Math.abs(cents);
-  if (kind === "income") return Math.abs(cents);
-  if (cents < 0) return cents;
-  return category?.kind === "income" ? Math.abs(cents) : -Math.abs(cents);
-}
-
-const present = (e) => e && ({ ...e, amount: formatCents(e.amount_cents) });
-
-const tool = (name, description, schema, hints, run) => ({
-  name,
-  description,
-  schema,
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false, ...hints },
-  run,
-});
-const RO = { readOnlyHint: true, idempotentHint: true };
+export const AGENT_INSTRUCTIONS = `${BASE_INSTRUCTIONS}\n${MAIL_INSTRUCTIONS}`;
 
 export const TOOLS = [
   tool("list_accounts",
@@ -337,6 +278,8 @@ export const TOOLS = [
       const out = entries.createTransfer({ from_account_id: from.id, to_account_id: to.id, amount_cents: Math.abs(parseAmountOrFail(a.amount)), date, note: a.note, source: "agent" });
       return { transfer_id: out.transfer_id, out: present(out.out), in: present(out.in) };
     }),
+
+  ...MAIL_TOOLS,
 ];
 
 export function findTool(name) {

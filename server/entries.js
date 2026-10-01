@@ -4,7 +4,7 @@ import { getAccount } from "./accounts.js";
 import { getCategory } from "./categories.js";
 import { parseDate, today } from "./dates.js";
 
-export const ENTRY_SOURCES = ["manual", "agent", "import"];
+export const ENTRY_SOURCES = ["manual", "agent", "import", "mail"];
 
 const dateField = z.string().transform((v, ctx) => {
   const parsed = parseDate(v);
@@ -25,6 +25,7 @@ const entryShape = {
   tags: z.array(z.string().trim().min(1).max(40)).max(20),
   source: z.enum(ENTRY_SOURCES),
   import_hash: z.string().max(64).nullable(),
+  source_ref: z.string().max(400).nullable(),
   transfer_id: z.string().nullable(),
 };
 export const entryInput = z.object({
@@ -36,6 +37,7 @@ export const entryInput = z.object({
   tags: entryShape.tags.default([]),
   source: entryShape.source.default("manual"),
   import_hash: entryShape.import_hash.default(null),
+  source_ref: entryShape.source_ref.default(null),
   transfer_id: entryShape.transfer_id.default(null),
 });
 export const entryPatch = z.object(entryShape).partial();
@@ -75,10 +77,10 @@ export function createEntry(input) {
   const id = uid();
   const ts = now();
   db().prepare(
-    `INSERT INTO entries (id, date, amount_cents, account_id, category_id, counterparty, note, tags, source, import_hash, transfer_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO entries (id, date, amount_cents, account_id, category_id, counterparty, note, tags, source, import_hash, source_ref, transfer_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, data.date, data.amount_cents, data.account_id, data.category_id, data.counterparty, data.note,
-    JSON.stringify(data.tags), data.source, data.import_hash, data.transfer_id, ts, ts);
+    JSON.stringify(data.tags), data.source, data.import_hash, data.source_ref, data.transfer_id, ts, ts);
   return getEntry(id);
 }
 

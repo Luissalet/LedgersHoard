@@ -82,6 +82,73 @@ const MIGRATIONS = [
   );
   CREATE INDEX scenario_lines_scenario ON scenario_lines(scenario_id);
   `,
+  // Payments and subscriptions read from mail. entries.source_ref ties an
+  // entry to the message that created it ("mail:<message-id>").
+  `
+  ALTER TABLE entries ADD COLUMN source_ref TEXT NULL;
+  CREATE INDEX entries_source_ref ON entries(source_ref);
+  CREATE TABLE mail_messages (
+    message_id TEXT PRIMARY KEY,
+    ts TEXT NOT NULL,
+    sender TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'noise',
+    state TEXT NOT NULL DEFAULT 'new',
+    facts TEXT NOT NULL DEFAULT '{}',
+    entry_id TEXT NULL,
+    snippet TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX mail_messages_state ON mail_messages(state);
+  CREATE INDEX mail_messages_ts ON mail_messages(ts);
+  CREATE INDEX mail_messages_entry ON mail_messages(entry_id);
+  CREATE TABLE subscriptions (
+    id TEXT PRIMARY KEY,
+    merchant TEXT NOT NULL,
+    merchant_key TEXT NOT NULL UNIQUE,
+    amount_cents INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'EUR',
+    period TEXT NOT NULL DEFAULT 'unknown',
+    status TEXT NOT NULL DEFAULT 'active',
+    last_charge_date TEXT NULL,
+    next_charge_date TEXT NULL,
+    trial_end_date TEXT NULL,
+    account_id TEXT NULL,
+    category_id TEXT NULL,
+    price_history TEXT NOT NULL DEFAULT '[]',
+    source TEXT NOT NULL DEFAULT 'mail',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE mail_runs (
+    id TEXT PRIMARY KEY,
+    ts TEXT NOT NULL,
+    trigger TEXT NOT NULL DEFAULT 'manual',
+    ok INTEGER NOT NULL DEFAULT 1,
+    error TEXT NOT NULL DEFAULT '',
+    since_days INTEGER NOT NULL DEFAULT 0,
+    scanned INTEGER NOT NULL DEFAULT 0,
+    recorded INTEGER NOT NULL DEFAULT 0,
+    review INTEGER NOT NULL DEFAULT 0,
+    duplicates INTEGER NOT NULL DEFAULT 0,
+    ignored INTEGER NOT NULL DEFAULT 0,
+    alerts INTEGER NOT NULL DEFAULT 0,
+    ms INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY,
+    ts TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'low',
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    dedupe_key TEXT NOT NULL UNIQUE,
+    payload TEXT NOT NULL DEFAULT '{}',
+    delivered TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE INDEX notifications_ts ON notifications(ts);
+  `,
 ];
 
 let connection = null;

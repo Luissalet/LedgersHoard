@@ -229,6 +229,10 @@ Nombre con muestra de color, cifra `gastado / presupuesto` y barra. Sin presupue
 
 SVG en línea, sin librería. Barras finas (`≤22px`) con separación de 2px entre series, ejes recesivos, leyenda siempre visible, tooltip al pasar el puntero y vista de tabla equivalente. Donut con top 8 + «Otras», lista con porcentaje y cifra.
 
+### Correo y suscripciones
+
+Páginas de lectura y decisión, no de alta. La tarjeta de estado de Correo agrupa lo que importa (cuenta leída, última y próxima lectura, error) y los interruptores; «Leer ahora» es la única acción primaria. «Por revisar» enseña siempre el motivo en texto, con Aceptar (campos editables al desplegar) e Ignorar. «Por revisar» también muestra el aviso de un pedido cancelado, con «Quitar el movimiento» y «Dejarlo como está» en lugar de Aceptar. «Deshacer» pide confirmación con `<dialog>` y queda desactivado cuando el banco ya concilió el movimiento. Las tarjetas de suscripción reutilizan `.panel`: importe a la derecha, estado en `chip` con texto (Activa, Prueba, Pausada, Cancelada), historial de precio como mini barras con la lista de fechas debajo (nunca solo color) y las acciones Cancelada / Pausada / Editar. En Resumen, «Del correo este mes» es una línea con un único importe, sin tile propio.
+
 ### Feedback
 
 Aviso centrado abajo (`role=status` o `alert`) con botón «Cerrar» y cierre automático a los 4 s. Borrados con `<dialog>` nativo y botón destructivo. Vacíos con borde discontinuo y una única acción («Crear cuenta», «Apuntar el primero»).
@@ -238,7 +242,8 @@ Aviso centrado abajo (`role=status` o `alert`) con botón «Cerrar» y cierre au
 ### Do:
 
 - **Do** formatear todo importe como `1.234,56 €` con cifras tabulares.
-- **Do** escribir el estado (Superado, Duplicada, Traspaso) además de colorearlo.
+- **Do** escribir el estado (Superado, Duplicada, Traspaso, Cancelada, Conciliado con el banco) además de colorearlo.
+- **Do** explicar en texto por qué un cobro del correo está en revisión.
 - **Do** guardar inmediatamente en campos sueltos y usar formularios solo para altas.
 - **Do** mantener las tablas legibles en móvil con desplazamiento dentro del panel.
 

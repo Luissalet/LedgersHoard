@@ -1,6 +1,6 @@
 # Ledger's Hoard
 
-Libro de cuentas doméstico local: cuentas, movimientos por categoría, presupuestos mensuales, informes e importación de extractos CSV del banco. Todo se guarda en un único archivo SQLite en vuestro ordenador y se expone a un asistente mediante MCP.
+Libro de cuentas doméstico local: cuentas, movimientos por categoría, presupuestos mensuales, informes, importación de extractos CSV del banco y pagos leídos del correo. Todo se guarda en un único archivo SQLite en vuestro ordenador y se expone a un asistente mediante MCP.
 
 English version: [`README.md`](README.md).
 
@@ -28,6 +28,8 @@ El servidor escucha únicamente en `127.0.0.1`. Si el puerto 5180 está ocupado 
 | `LEDGER_ALLOWED_HOSTS` | Nombres de host adicionales aceptados detrás de un túnel (ver más abajo). |
 | `LEDGER_URL` | Puente MCP: URL de la aplicación (por defecto `http://127.0.0.1:5180`). Debe ser local. |
 | `LEDGER_TOKEN_FILE` / `LEDGER_TOKEN` | Puente MCP: de dónde leer el token (por defecto `<datos>/mcp-token`). |
+| `LEDGER_FAUSTUS_DIR` / `FAUSTUS_DIR` | Carpeta de Faustus para leer el correo (también en Ajustes; si no, `../faustus` o `../../faustus`). Vale si existe `mcp_servers/email_server.py`. |
+| `LEDGER_MAIL_SCHEDULER=0` | No arrancar la lectura de correo en segundo plano (siguen funcionando «Leer ahora» y las herramientas). |
 
 ### Acceso desde el móvil (a través de un túnel)
 
@@ -37,18 +39,42 @@ Una vez abierta a través del túnel, el navegador ofrece instalarla (PWA).
 
 ## Qué hace
 
-- **Resumen** — selector de mes, tiles de ingresos / gastos / neto / saldo total, barras de presupuesto por categoría (superado en color de peligro y con el texto «Superado»), últimos movimientos y saldos por cuenta.
+- **Resumen** — selector de mes, tiles de ingresos / gastos / neto / saldo total, barras de presupuesto por categoría (superado en color de peligro y con el texto «Superado»), últimos movimientos, saldos por cuenta y una línea «Del correo este mes» con lo que ha apuntado el correo.
 - **Movimientos** — tabla con filtros (fechas, cuenta, categoría, texto), fila de alta rápida arriba (Enter guarda, Escape cancela), edición en línea, borrado con confirmación y formulario de traspaso entre cuentas.
 - **Cuentas** — efectivo, banco, tarjeta, ahorro u otra; divisa por cuenta; saldo inicial; se archivan en lugar de borrarse si tienen movimientos.
 - **Categorías** — de gasto o de ingreso, con padre opcional, color y presupuesto mensual editable al pulsar. La primera vez se crea un juego por defecto (Comida, Casa, Transporte, Ocio, Salud, Suscripciones, Ropa, Regalos, Otros gastos; Nómina, Otros ingresos).
 - **Importar** — pegad o elegid el CSV del banco. Se detectan separador (`;`, `,`, tabulador), cabecera, fechas (`DD/MM/YYYY`, `YYYY-MM-DD`, `DD-MM-YYYY`), coma decimal y columnas separadas de cargo/abono; el mapeo se corrige con desplegables; la vista previa enseña las 20 primeras filas y cuántas están duplicadas; al importar se informa de añadidas y omitidas.
 - **Informes** — barras de ingresos frente a gastos de los últimos 12 meses y donut de gasto por categoría, en SVG y con vista de tabla.
 - **Previsión** — escenarios guardados con ingresos y gastos hipotéticos puntuales, mensuales o trimestrales. Se pueden editar y comparar los saldos registrados y previstos de 3 a 24 meses. Los pagos periódicos detectados rellenan el formulario para revisarlos antes de añadirlos. Los supuestos no crean movimientos reales; las distintas divisas se muestran por separado.
-- **Ajustes** — símbolo de moneda; carpeta de datos y versión solo de lectura.
+- **Correo** — lee la cuenta de correo conectada a Faustus, encuentra pagos (recibos, «has pagado», avisos de tarjeta, facturas con «importe a cargar», pedidos con total, reembolsos) y los apunta como gastos en la fecha del cobro. Tarjeta de estado (cuenta leída, última y próxima lectura, último error, «Leer ahora», activar, apuntar solos, cuenta de los cobros, frecuencia, límite de importe en euros, avisos de Windows y de la familia), «Apuntado desde el correo» con Deshacer, «Por revisar» con Aceptar (comercio, importe, fecha, cuenta y categoría editables) e Ignorar, duplicados vistos, avisos recientes y un cuadro para pegar un recibo que no esté en el buzón.
+- **Suscripciones** — las que aparecen en el correo (servicios conocidos, palabras de suscripción) o en cargos repetidos (`recurring.js`; nunca tiendas ni comida), con coste mensual y anual por divisa, historial de precio, próximo cobro, fin de prueba, Cancelada / Pausada / Editar, cobros de los próximos 30 días y los avisos generados.
+- **Ajustes** — símbolo de moneda; carpeta y usuario de Faustus para el correo y «Reiniciar el correo» (empezar de cero); carpeta de datos y versión solo de lectura.
 
 Todos los importes se guardan en céntimos enteros. Entradas como `12,50`, `12.5`, `-3`, `1.234,56` o `1,234.56` las interpreta `shared/money.js` (`parseAmount`), común a la interfaz, la API y las herramientas.
 
 Un traspaso son dos movimientos enlazados por `transfer_id`: cambian los saldos pero no cuentan como ingreso ni gasto ni en los presupuestos.
+
+## Correo: pagos y suscripciones
+
+El correo se lee a través de Faustus: `server/mail/faustus_mail.py` se ejecuta con el Python de Faustus dentro de su carpeta y devuelve solo los mensajes que encajan con una búsqueda de pagos (`gmail_query` en Gmail, `subject_terms` en otros servidores IMAP). La contraseña nunca llega a esta aplicación. La primera lectura abarca `first_days` (62: este mes y el anterior); las siguientes, `window_days` (14). Una lectura se lanza 30 s después de arrancar y luego cada `interval_min` minutos, de una en una; se guardan las últimas 50.
+
+El texto de los correos es dato no fiable. `server/mail-parse.js` solo lo analiza con patrones (ES/EN) y extrae tipo (`charge`, `refund`, `upcoming`, `cancel`, `failed`, `noise`), comercio, importe y divisa, fecha del cobro, periodo, próximo cobro, fin de prueba, número de pedido y las 4 últimas cifras de la tarjeta, con una confianza de 0 a 100. La búsqueda deja fuera las pestañas de promociones, social y foros de Gmail (`-category:promotions -category:social -category:forums`). Respuestas (`Re:`), peticiones de opinión («¿Qué tal tu pedido?», «Da tu opinión»), boletines y remitentes comerciales (`newsletter@`, `info-promo@`, hosts `deals.`), avisos de mensajería, correos de regalos o promociones y conversaciones con atención al cliente son ruido y nunca llegan a revisión. Mencionar un reembolso sin ningún importe no es un reembolso. Se leen las etiquetas seguidas de líneas en blanco y luego el valor («TOTAL», línea en blanco, «€ 24.03»; «Importe:», línea en blanco, «16.92 EUR»), `TOTAL` gana a `Subtotal` y una fecha de entrega («Llega el…») nunca es la del cobro. Un cobro o reembolso con comercio, importe y fecha y confianza ≥ `min_confidence` (70) se apunta solo como movimiento en céntimos negativos (`source = mail`, `source_ref = mail:<id>`, nota `«asunto» · correo`). La categoría es la más usada antes con ese concepto; si no, la pista del comercio conocido casada por nombre con una categoría existente (nunca se crean categorías solas); si no, ninguna. Los nombres de comercio quedan en la marca («Account Services», «(Customer Support)», `.es` y `no-reply` se quitan) y un cobro con comercio, importe y fecha más un indicio de pedido o recibo puntúa al menos 75. Los cobros por encima de `review_above` (500 € por defecto, 0 desactiva la comprobación; se cambia en Correo) esperan siempre en revisión con «importe alto (revísalo)». Lo demás va a **Por revisar** con el motivo (sin cuenta elegida, varias cuentas, divisa distinta, falta importe o fecha, poca confianza, pedido cancelado). Los avisos de renovación, pruebas, cancelaciones y pagos fallidos no son movimientos: actualizan la suscripción y generan un aviso.
+
+Ajustes (`mail.*`, `notify.*` en la tabla de ajustes): `enabled`, `auto_record`, `account` (vacía y con una sola cuenta activa se usa esa; si no, los cobros van a revisión), `interval_min`, `first_days`, `window_days`, `min_confidence`, `review_above`, `toast`, `hub`, `faustus_dir`, `faustus_owner`.
+
+### Cómo se evitan los duplicados
+
+1. El mismo identificador de mensaje no se procesa dos veces.
+2. Los números de pedido (Amazon 3-7-7, «número de pedido es N», `GS.xxxx-…`, «Pedido N», «order #…», «n.° N») se guardan en `order_ref`: un correo posterior del mismo comercio y pedido (estado, repetición, respuesta) no se apunta de nuevo, y si el primero sigue en revisión sin importe, el posterior lo completa. Los números cortos (menos de 7 caracteres, típicos de restaurantes) solo coinciden con un día de diferencia.
+3. Un movimiento existente de cualquier origen (también de un CSV del banco) con el mismo importe con signo, fecha a menos de 3 días y concepto coincidente hace que el correo quede como `duplicate` enlazado a él.
+4. Si el CSV del banco llega después de apuntar el correo, la fila del banco adopta el movimiento del correo en vez de crear otro: queda UN movimiento, mandan la fecha, el importe y la cuenta del banco, el correo sigue enlazado (`source_ref` y nota) y la vista previa y el resultado de la importación lo cuentan como `matched_mail` (no entra en `rows_new`).
+5. `mail_undo` / **Deshacer** borra el movimiento que creó el correo (con confirmación) y deja el correo como `ignored`; se niega si una fila del banco ya lo adoptó.
+
+Un correo que cancela un pedido ya apuntado («pedido cancelado») no es un aviso de suscripción: espera en revisión con «Quitar el movimiento» y «Dejarlo como está», y deshacer el pedido lo cierra. Las tiendas, la comida y los restaurantes (Amazon, apps de reparto, comercios) nunca son suscripciones por sí solos: solo lo hace una mención explícita de membresía («Amazon Prime»), los cargos repetidos no bastan y los enlaces del pie como «Cancelar suscripción» no cuentan. Las plataformas que cobran varios servicios (Google Play) generan una suscripción por producto, así que sus precios no se comparan entre sí.
+
+### Avisos
+
+Se guardan (últimos 200) y se ven en Correo y con `ledger_notifications`. Aviso de Windows mediante un `.ps1` temporal con BOM UTF-8 que PowerShell ejecuta oculto (solo win32; los de gravedad baja de una lectura se juntan en uno). Eventos del bus familiar (`family.emit`): `ledger.mail.recorded` {entry_id, merchant, amount, date}, `ledger.subscription.new`, `ledger.subscription.price`, `ledger.subscription.trial`, `ledger.payment.failed`, y además `ledger.subscription.upcoming` y `ledger.subscription.cancelled`. Gravedad: baja para apuntado o cancelada, media para suscripción nueva, cambio de precio o renovación anual a 7 días o menos, alta para pagos fallidos y pruebas que acaban en 3 días o menos. Cada aviso salta una sola vez (clave de deduplicación).
 
 ## Conectar un asistente (MCP)
 
@@ -64,7 +90,7 @@ Un traspaso son dos movimientos enlazados por `transfer_id`: cambian los saldos 
 
 `faustus-plugin.json` describe la aplicación para Faustus (comprobación de salud, arranque y comando MCP con marcadores).
 
-Herramientas (17):
+Herramientas (38):
 
 | Herramienta | Uso |
 | --- | --- |
@@ -85,6 +111,19 @@ Herramientas (17):
 | `import_csv_preview` | Analizar un CSV: columnas, mapeo propuesto, filas de muestra, duplicados. |
 | `import_csv_commit` | Importar en una cuenta con deduplicación por hash (se puede repetir sin riesgo). |
 | `transfer` | Mover dinero entre dos cuentas. |
+| `mail_status` | Estado de la lectura del correo: cuenta leída vía Faustus, última lectura, errores, pendientes de revisar. |
+| `mail_scan` | Leer el correo ahora (`since_days`, `query`) y apuntar pagos y suscripciones. |
+| `mail_review` | Pagos pendientes de revisar y por qué. |
+| `mail_accept` | Apuntar un pago de la cola, con `account`, `category`, `amount`, `date`, `merchant` opcionales. |
+| `mail_ignore` | Marcar un correo como no-pago. |
+| `mail_undo` | Borrar el movimiento que creó un correo e ignorarlo (`confirm: true`). |
+| `mail_reset` | Empezar de cero con el correo: correos leídos, suscripciones creadas desde el correo, avisos e historial de lecturas (`confirm: true`; los movimientos solo con `delete_entries: true`, y entonces solo los que creó un correo y no adoptó el banco). Solo si el usuario lo pide. |
+| `mail_paste` | Apuntar un recibo que no está en el buzón a partir de `subject`, `text`, `from`. |
+| `subscriptions_list` | Suscripciones por `status` con totales mensual y anual. |
+| `subscription_update` | Cambiar estado (cancelled / paused / active), importe, periodo, categoría, próximo cobro, notas. |
+| `subscriptions_upcoming` | Cobros y fines de prueba de los próximos `days` (30). |
+| `mail_spending` | Lo apuntado desde el correo en un `month`, por comercio y categoría, con enlaces a los movimientos. |
+| `ledger_notifications` | Avisos recientes: pagos apuntados, suscripciones nuevas, cambios de precio, pruebas, pagos fallidos. |
 
 Cada descripción termina con una línea `Sinónimos:` con las palabras que se usan en español. Si un nombre de cuenta o categoría es ambiguo, la herramienta devuelve `candidates` para que el asistente pregunte en vez de adivinar.
 
@@ -94,7 +133,8 @@ Cada descripción termina con una línea `Sinónimos:` con las palabras que se u
 - `data/mcp-token` — 32 bytes aleatorios escritos en cada arranque; nunca se sube al repositorio.
 - Solo se aceptan peticiones desde `localhost` / `127.0.0.1`; las peticiones de otras webs se rechazan.
 - CSV de hasta 10 MB; `list_entries` devuelve como máximo 200 filas por llamada en las herramientas y 500 en la interfaz.
-- El servidor no hace ninguna llamada a internet.
+- El servidor no hace llamadas a internet por sí mismo. El correo se lee solo con el proceso auxiliar de Faustus, que es lo único que habla con el servidor de correo.
+- Del texto de cada correo se guardan 300 caracteres como máximo, sin caracteres de control.
 
 ## Verificación
 
@@ -104,5 +144,7 @@ npm run build   # vite build → dist/
 ```
 
 Las pruebas usan carpetas temporales y nunca tocan `data/`.
+
+Los módulos del correo están en `server/mail-*.js`, `server/subscriptions.js`, `server/notifications.js` y `server/mail/faustus_mail.py`; las páginas, en `client/src/pages/Correo.jsx` y `Suscripciones.jsx`.
 
 Licencia: MIT (ver `LICENSE`).

@@ -25,10 +25,20 @@ function TransferForm({ accounts, onDone, run, busy }) {
   );
 }
 
+/** Filters carried in the hash, e.g. #/movimientos?text=Netflix&from=2026-10-01&to=2026-10-31 (links from Correo). */
+function hashFilter() {
+  const query = window.location.hash.split("?")[1];
+  if (!query) return null;
+  const params = new URLSearchParams(query);
+  const out = {};
+  for (const k of ["from", "to", "account", "category", "text"]) if (params.has(k)) out[k] = params.get(k);
+  return Object.keys(out).length ? out : null;
+}
+
 export default function Movimientos() {
   const { accounts, categories, settings, refresh, notify } = useApp();
   const symbol = settings?.currency_symbol || "€";
-  const [filter, setFilter] = useState({ from: `${thisMonth()}-01`, to: "", account: "", category: "", text: "" });
+  const [filter, setFilter] = useState(() => ({ from: `${thisMonth()}-01`, to: "", account: "", category: "", text: "", ...(hashFilter() || {}) }));
   const [result, setResult] = useState({ items: [], total: 0 });
   const [draft, setDraft] = useState(() => emptyDraft({ date: today(), account_id: accounts.find((a) => !a.archived)?.id || "" }));
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -44,6 +54,11 @@ export default function Movimientos() {
     }
   }, [filter, notify]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const onHash = () => { const f = hashFilter(); if (f) setFilter((cur) => ({ ...cur, to: "", text: "", ...f })); };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const setF = (k) => (e) => setFilter((f) => ({ ...f, [k]: e.target.value }));
 

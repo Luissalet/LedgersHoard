@@ -4,7 +4,7 @@ import { addMonths, isMonth, monthRange, thisMonth } from "./dates.js";
 import { formatCents } from "./money.js";
 
 const monthIndex = (date) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7));
-const merchantKey = (name) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+export const merchantKey = (name) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
