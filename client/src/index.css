@@ -1,35 +1,36 @@
 @import "tailwindcss";
+@import "./hoard-theme.css";
 
-/* Tokens from DESIGN.md — warm paper with an amber/ochre accent. */
+/* Tokens mapped onto the shared Hoard theme (hoard-theme.css), dark by default. */
 :root {
-  --accent: #8a5a19;
-  --accent-hover: #6f4713;
-  --ink: #33291b;
-  --muted: #6f6556;
-  --paper: #fcfaf5;
-  --white: #ffffff;
-  --line: #e8e1d3;
-  --soft: #f3ede1;
-  --sidebar: #f5f0e5;
-  --nav-active: #ecdfc6;
-  --nav-active-ink: #5c3c0f;
-  --nav-hover: #f0e8d8;
-  --field-line: #d9cfbb;
-  --field-ink: #3d2f18;
-  --placeholder: #857a68;
-  --supporting-ink: #6c6151;
-  --focus: #a3702a;
-  --button-line: #ddd4c2;
-  --panel: #f6f1e6;
-  --income-bg: #e6efe3;
-  --income-ink: #2f5f3a;
-  --expense-ink: #7a3d2a;
-  --warn-bg: #f8ecd2;
-  --warn-ink: #7a5a17;
-  --danger-bg: #fbeceb;
-  --danger-ink: #8a3a2c;
-  --danger-line: #e8c8c2;
-  --bar-bg: #ece4d3;
+  --accent: var(--hoard-accent);
+  --accent-hover: var(--hoard-accent-strong);
+  --ink: var(--hoard-text);
+  --muted: var(--hoard-text-muted);
+  --paper: var(--hoard-deep);
+  --white: var(--hoard-surface);
+  --line: var(--hoard-border);
+  --soft: var(--hoard-elevated);
+  --sidebar: var(--hoard-surface);
+  --nav-active: var(--hoard-elevated);
+  --nav-active-ink: var(--hoard-text);
+  --nav-hover: var(--hoard-elevated);
+  --field-line: var(--hoard-border);
+  --field-ink: var(--hoard-text);
+  --placeholder: var(--hoard-text-dim);
+  --supporting-ink: var(--hoard-text-muted);
+  --focus: var(--hoard-accent);
+  --button-line: var(--hoard-border);
+  --panel: var(--hoard-surface);
+  --income-bg: color-mix(in srgb, var(--hoard-success) 16%, transparent);
+  --income-ink: color-mix(in srgb, var(--hoard-success) 68%, white);
+  --expense-ink: color-mix(in srgb, var(--hoard-danger) 55%, white);
+  --warn-bg: color-mix(in srgb, var(--hoard-warning) 16%, transparent);
+  --warn-ink: color-mix(in srgb, var(--hoard-warning) 70%, white);
+  --danger-bg: color-mix(in srgb, var(--hoard-danger) 16%, transparent);
+  --danger-ink: color-mix(in srgb, var(--hoard-danger) 55%, white);
+  --danger-line: color-mix(in srgb, var(--hoard-danger) 40%, transparent);
+  --bar-bg: var(--hoard-elevated);
 }
 
 @layer base {
@@ -109,3 +110,45 @@ dialog::backdrop { background: #2a1c0a55; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 }
+
+/* ---- Hoard family chrome (the Writer's Hoard look) ---- */
+html { color-scheme: dark; }
+body { font-family: var(--hoard-font-sans); }
+h1, h2, h3 { color: var(--hoard-text); }
+main h1 { font-family: var(--hoard-font-serif); font-weight: 700; font-size: 30px; letter-spacing: 0; color: var(--hoard-text); }
+main header .help { font-size: 14px; color: var(--hoard-text-muted); }
+main h2 { font-weight: 600; }
+
+aside { background: var(--hoard-surface) !important; border-color: var(--hoard-border) !important; }
+aside > div:first-child { min-height: var(--hoard-header-h); padding-top: 0; padding-bottom: 0; border-bottom: 1px solid var(--hoard-border); }
+aside > div:first-child > span { width: 32px; height: 32px; border-radius: 8px; background: var(--hoard-accent) !important; color: var(--hoard-accent-ink) !important; font-family: var(--hoard-font-serif) !important; font-weight: 700; }
+aside > div:first-child .leading-tight > div:first-child { font-family: var(--hoard-font-serif); font-weight: 700; color: var(--hoard-accent); }
+aside > div:first-child .help { color: var(--hoard-text-dim); }
+aside nav { padding-top: 12px; }
+.nav-link { min-height: 40px; padding: 8px 12px; border-radius: var(--hoard-radius); font-size: 14px; font-weight: 500; color: var(--hoard-text-muted); }
+.nav-link:hover { background: var(--hoard-elevated); color: var(--hoard-text); }
+.nav-link[aria-current="page"] { background: var(--hoard-elevated); color: var(--hoard-text); font-weight: 600; }
+.nav-link[aria-current="page"] svg { color: var(--hoard-accent); }
+
+.panel, .panel-white, .card { background: var(--hoard-surface); border: 1px solid var(--hoard-border); border-radius: var(--hoard-radius-lg); }
+.card:hover, .panel:hover, .panel-white:hover { border-color: var(--hoard-border-hover); box-shadow: none; }
+.btn { background: transparent; border-color: var(--hoard-border); color: var(--hoard-text); border-radius: var(--hoard-radius); min-height: 36px; }
+.btn:hover { background: var(--hoard-elevated); }
+.btn-primary { background: var(--hoard-accent); border-color: var(--hoard-accent); color: var(--hoard-accent-ink); }
+.btn-primary:hover { background: var(--hoard-accent-strong); border-color: var(--hoard-accent-strong); }
+.btn-danger { background: transparent; border-color: var(--hoard-border); color: var(--danger-ink); }
+.btn-danger:hover { background: var(--danger-bg); border-color: var(--danger-line); }
+.btn-active { background: var(--hoard-elevated); border-color: var(--hoard-accent-line); color: var(--hoard-text); }
+.field { background: var(--hoard-sunken); border-radius: var(--hoard-radius); }
+.field:focus { outline: none; border-color: var(--hoard-accent); }
+select.field option { background: var(--hoard-surface); color: var(--hoard-text); }
+.chip { background: var(--hoard-elevated); border-radius: var(--hoard-radius-sm); color: var(--hoard-text-muted); }
+.chip-income, .chip-danger, .chip-warn, .chip-ok, .chip-accent, .chip-favorite, .chip-circle { border-radius: var(--hoard-radius-sm); }
+.table th { color: var(--hoard-text-dim); font-size: 12px; }
+.table tr:hover td { background: var(--hoard-elevated); }
+.circle-filter { background: transparent; color: var(--hoard-text-muted); }
+.toast { background: var(--hoard-elevated); color: var(--hoard-text); border: 1px solid var(--hoard-border); box-shadow: var(--hoard-shadow); }
+dialog { background: var(--hoard-surface); color: var(--hoard-text); border: 1px solid var(--hoard-border); border-radius: var(--hoard-radius-lg); box-shadow: var(--hoard-shadow); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.bg-white { background-color: var(--hoard-surface) !important; }
+.divide-y > *, .border, .border-b, .border-t, .border-r, .border-l { border-color: var(--hoard-border); }
