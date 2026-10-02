@@ -10,8 +10,11 @@
 //   failed   a payment was declined: alert only
 //   noise    everything else (offers, newsletters, shipping updates without a charge, own mail)
 import { parseAmount } from "../shared/money.js";
-import { fold, knownMerchant, BANK_RE, SHOP_CATS } from "./mail-merchants.js";
-import { merchantKey } from "./mail-match.js";
+import { fold } from "./hoard-commons/text.js";
+import { findPrices } from "./hoard-commons/money.js";
+import { findDates as findFamilyDates, resolveYear } from "./hoard-commons/dates.js";
+import { lookup as knownMerchant, isBank, findOrderRef as findFamilyOrderRef } from "./hoard-commons/merchants.js";
+import { merchantKey, SHOP_CATS } from "./mail-match.js";
 import { addDays, daysBetween, localDate, parseDate } from "./dates.js";
 
 export const KINDS = ["charge", "refund", "upcoming", "cancel", "failed", "noise"];
@@ -58,30 +61,18 @@ export function oneLine(text, max = 300) {
 }
 
 // ---------------------------------------------------------------- amounts
-const CUR = "€|eur(?:os?)?|usd|us\\$|\\$|£|gbp";
-const NUM = "\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?";
-const MONEY = new RegExp(
-  `(?<![\\d.,])(?:(?<![a-z])(${CUR})\\s*(${NUM})|(${NUM})\\s*(${CUR})(?![a-z]))`,
-  "gi",
-);
 const MAX_CENTS = 50_000_000;
 
-const currencyOf = (raw) => {
-  const c = raw.toLowerCase();
-  if (c.includes("€") || c.startsWith("eur")) return "EUR";
-  if (c.includes("£") || c === "gbp") return "GBP";
-  return "USD";
-};
-
-/** Every money amount of a (folded) line: [{ cents, currency, index, end }]. */
+/**
+ * Every money amount of a (folded) line: [{ cents, currency, index, end }]. The reading of the amounts is the family's
+ * (findPrices); what stays here is what a payment needs: a positive amount below MAX_CENTS, EUR when the text names no currency.
+ */
 export function findMoney(line) {
   const out = [];
-  for (const m of line.matchAll(MONEY)) {
-    const number = m[2] ?? m[3];
-    const currency = currencyOf(m[1] ?? m[4]);
-    const cents = parseAmount(number);
-    if (cents === null || cents <= 0 || cents > MAX_CENTS) continue;
-    out.push({ cents, currency, index: m.index, end: m.index + m[0].length });
+  for (const hit of findPrices(line)) {
+    const cents = Math.round(hit.amount * 100);
+    if (!(cents > 0) || cents > MAX_CENTS) continue;
+    out.push({ cents, currency: hit.currency || "EUR", index: hit.start, end: hit.end });
   }
   return out;
 }
@@ -154,52 +145,24 @@ export function pickAmount(subjectFolded, bodyFolded, { upcomingFrom = -1, bodyL
 }
 
 // ---------------------------------------------------------------- dates
-const MONTHS = {
-  enero: 1, ene: 1, january: 1, jan: 1, febrero: 2, feb: 2, february: 2, marzo: 3, mar: 3, march: 3, abril: 4, abr: 4, april: 4, apr: 4,
-  mayo: 5, may: 5, junio: 6, jun: 6, june: 6, julio: 7, jul: 7, july: 7, agosto: 8, ago: 8, august: 8, aug: 8,
-  septiembre: 9, setiembre: 9, sept: 9, sep: 9, september: 9, octubre: 10, oct: 10, october: 10,
-  noviembre: 11, nov: 11, november: 11, diciembre: 12, dic: 12, december: 12, dec: 12,
-};
-const MONTH_RE = "(?:septiembre|setiembre|september|noviembre|november|diciembre|december|febrero|february|octubre|october|january|enero|febrero|marzo|march|abril|april|mayo|junio|june|julio|july|agosto|august|sept|sep|ene|jan|feb|mar|abr|apr|may|jun|jul|ago|aug|oct|nov|dic|dec)";
-const iso = (y, m, d) => parseDate(`${y}-${m}-${d}`);
-
-function resolveYear(day, month, mailDate, prefer) {
-  const base = Number(mailDate.slice(0, 4));
-  const options = [base - 1, base, base + 1].map((y) => iso(y, month, day)).filter(Boolean);
-  if (!options.length) return null;
-  const score = (d) => {
-    const diff = daysBetween(mailDate, d);
-    return prefer === "future" ? (diff >= -10 ? diff : 10_000 - diff) : (diff <= 45 ? -diff : 10_000 + diff);
-  };
-  return options.sort((a, b) => score(a) - score(b))[0];
-}
+// What a date in a mail is (the formats, the months in six languages, ISO, d/m/y, "12 de marzo") is the family's findDates; what
+// stays here is which year a date without one belongs to: relative to the mail's own date, in the direction the caller wants
+// (a charge already happened, a renewal is still to come).
+const HAS_YEAR = /(?:19|20)\d{2}|\d{1,2}[/.-]\d{1,2}[/.-]\d{2}(?!\d)/;
 
 /** Dates of a folded line: [{ date, index }] with the year inferred from the mail date when missing. */
 export function findDates(line, mailDate, prefer = "past") {
   const out = [];
-  const push = (date, index) => { if (date) out.push({ date, index }); };
-  for (const m of line.matchAll(/(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)/g)) push(iso(m[1], m[2], m[3]), m.index);
-  for (const m of line.matchAll(/(?<![\d/.-])(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?![\d/])/g)) {
-    let a = Number(m[1]);
-    let b = Number(m[2]);
-    if (b > 12 && a <= 12) [a, b] = [b, a];
-    const year = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
-    push(iso(year, b, a), m.index);
-  }
-  for (const m of line.matchAll(new RegExp(`(?<!\\d)(\\d{1,2})(?:st|nd|rd|th|o)?\\s+(?:de\\s+)?(${MONTH_RE})\\b\\.?(?:,?\\s*(?:de(?:l)?\\s+)?(\\d{4}))?`, "g"))) {
-    const month = MONTHS[m[2]];
-    push(m[3] ? iso(m[3], month, m[1]) : resolveYear(Number(m[1]), month, mailDate, prefer), m.index);
-  }
-  for (const m of line.matchAll(new RegExp(`\\b(${MONTH_RE})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s*(\\d{4}))?`, "g"))) {
-    const month = MONTHS[m[1]];
-    push(m[3] ? iso(m[3], month, m[2]) : resolveYear(Number(m[2]), month, mailDate, prefer), m.index);
-  }
-  for (const m of line.matchAll(/(?<![\d/.-])(\d{1,2})\/(\d{1,2})(?![\d/])/g)) {
-    if (out.some((d) => Math.abs(d.index - m.index) < 6)) continue;
-    push(resolveYear(Number(m[1]), Number(m[2]), mailDate, prefer), m.index);
-  }
   const seen = new Set();
-  return out.filter((d) => (seen.has(`${d.date}|${d.index}`) ? false : seen.add(`${d.date}|${d.index}`))).sort((a, b) => a.index - b.index);
+  for (const hit of findFamilyDates(line, { today: mailDate, loose: true })) {
+    let date = hit.date;
+    if (!HAS_YEAR.test(hit.text)) date = resolveYear(Number(date.slice(8)), Number(date.slice(5, 7)), mailDate, prefer) || date;
+    const key = `${date}|${hit.start}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ date, index: hit.start });
+  }
+  return out.sort((a, b) => a.index - b.index);
 }
 
 const CHARGE_DATE_LABEL = /(fecha( de(l)?)?\s*(cobro|pago|cargo|compra|pedido|operacion|transaccion|factura|emision|facturacion|adeudo|recibo|domiciliacion|valor)?|date( of (purchase|payment|charge|order|transaction))?|billed on|paid on|charged on|purchased on|order date|invoice date|payment date|importe a cargar|a cargar|se (cargara|cobrara|adeudara|domiciliara)|cargo previsto|cargado el|cobrado el|pagado el|fecha de cargo|cargo el|compra del|(^|[^a-z])pedido\s*:?\s*$|(^|[^a-z])order\s*:?\s*$)/;
@@ -369,18 +332,18 @@ export function identifyMerchant({ fromName, fromAddress, subject, body, cardNot
   const domain = String(fromAddress ?? "").split("@")[1] || "";
   const senderText = `${fromName ?? ""} ${domain}`;
   const known = knownMerchant(senderText);
-  const bankSender = BANK_RE.test(fold(senderText));
+  const bankSender = isBank(senderText);
   if (known?.gateway) {
     const payee = extractPayee(subject, body);
     if (payee) return { name: payee, known: knownMerchant(payee), how: "payee" };
-    return { name: null, known: null, how: "none", gateway: known.name };
+    return { name: null, known: null, how: "none", gateway: known.display };
   }
   if (cardNotice && (bankSender || !known)) {
     const name = extractCardMerchant(body);
-    if (name) return { name: knownMerchant(name)?.name || name, known: knownMerchant(name), how: "body" };
+    if (name) return { name: knownMerchant(name)?.display || name, known: knownMerchant(name), how: "body" };
     if (bankSender) return { name: null, known: null, how: "none", bank: true };
   }
-  if (known) return { name: known.name, known, how: "known" };
+  if (known) return { name: known.display, known, how: "known" };
   const name = senderName(fromName, fromAddress);
   if (name) return { name, known: null, how: "sender" };
   const fromSubject = /(?:recibo|receipt|invoice|factura|pedido|order)\s+(?:de|from|para)\s+([^\n:#]{2,40})/i.exec(subject);
@@ -388,30 +351,9 @@ export function identifyMerchant({ fromName, fromAddress, subject, body, cardNot
   return guess ? { name: guess, known: knownMerchant(guess), how: "payee" } : { name: null, known: null, how: "none" };
 }
 
-const REF = "([a-z0-9][a-z0-9./-]{2,34}[a-z0-9])";
-const REF_PATTERNS = [
-  /\b([a-z]?\d{2,3}-\d{7}-\d{7})\b/g, // Amazon order numbers
-  /\b(gs\.\d{4}-\d{4}-\d{4})\b/g, // Google Store
-  /\b((?:sop|gpa)\.[0-9.-]{8,40})/g, // Google Play
-  new RegExp(`(?:id de pedido|order id|order #|pedido #|invoice #|factura #|n[º°o]\\.? de factura|referencia del pedido)\\s*[:#]?\\s*${REF}`, "g"),
-  new RegExp(`(?:numero|num\\.?|n\\.?[º°o]\\.?)\\s*(?:de\\s+)?(?:pedido|orden|order|factura|invoice|recibo|receipt)\\s*(?:es|is|:|#)?\\s*[:#]?\\s*${REF}`, "g"),
-  new RegExp(`\\b(?:pedido|orden|order)\\s*(?:n\\.?[º°o]\\.?|no\\.?|num\\.?|number|numero|#|:|es|is)\\s*[:#]?\\s*${REF}`, "g"),
-  /\b(?:pedido|order)\s+#?(\d{5,})\b/g,
-  new RegExp(`(?:factura|invoice|recibo|receipt|referencia|reference|ref\\.?)\\s*(?:no\\.?|n[º°o]\\.?|#|:)?\\s*[:#]?\\s*${REF}`, "g"),
-];
-const validRef = (ref) => (ref.match(/\d/g) || []).length >= 3 && !/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(ref) && !/^\d{4}-\d{2}-\d{2}$/.test(ref);
-
 /** Order, invoice or receipt number (upper case), or null. Text is accent-folded and lower case. */
 export function findOrderRef(subjectFolded, bodyFolded) {
-  const text = `${subjectFolded}\n${bodyFolded}`;
-  for (const re of REF_PATTERNS) {
-    re.lastIndex = 0;
-    for (const m of text.matchAll(re)) {
-      const ref = m[1].replace(/[-/.]+$/g, "");
-      if (validRef(ref)) return ref.toUpperCase().slice(0, 40);
-    }
-  }
-  return null;
+  return findFamilyOrderRef(`${subjectFolded}\n${bodyFolded}`) || null;
 }
 
 const LAST4 = /(?:tarjeta|card|visa|mastercard|amex|terminada en|ending in|acabada en|finalizada en|\*{2,}|x{3,}|•{2,}|\.{3})\s*(?:[a-z]+\s*){0,2}[*x•.\s-]*(\d{4})\b/i;
@@ -478,7 +420,7 @@ export function parseMail(msg, { now = Date.now() } = {}) {
   const shippingSubject = SHIPPING_SUBJ.test(fs) && !CONFIRM_SUBJ.test(fs);
   const upcomingSubject = UPCOMING_SUBJ.test(fs);
   const upcomingBody = UPCOMING.test(fb);
-  const cardNotice = (CARD_NOTICE_SUBJ.test(fs) || (/(compra|pago|cargo|purchase|payment|transaction)[^\n]{0,120}\b(tarjeta|card)\b|\b(tarjeta|card)\b[^\n]{0,120}(compra|pago|cargo|purchase|payment|transaction)/.test(fb) && BANK_RE.test(fold(`${msg?.from_name ?? ""} ${String(msg?.from_address ?? "").split("@")[1] ?? ""}`))));
+  const cardNotice = (CARD_NOTICE_SUBJ.test(fs) || (/(compra|pago|cargo|purchase|payment|transaction)[^\n]{0,120}\b(tarjeta|card)\b|\b(tarjeta|card)\b[^\n]{0,120}(compra|pago|cargo|purchase|payment|transaction)/.test(fb) && isBank(`${msg?.from_name ?? ""} ${String(msg?.from_address ?? "").split("@")[1] ?? ""}`)));
 
   if (!failed && (PROMO_VERB_SUBJ.test(fs) || (BULLETIN_FOOTER.test(fb) && !CONFIRM_SUBJ.test(fs) && !pastSubject && !findOrderRef(fs, fb)))) {
     reasons.push(PROMO_VERB_SUBJ.test(fs) ? "oferta o promoción" : "boletín (sin recibo ni pedido)");
@@ -504,18 +446,18 @@ export function parseMail(msg, { now = Date.now() } = {}) {
     facts.merchant = who.name;
     facts.merchant_key = merchantKey(who.name);
     facts.known = !!who.known;
-    facts.category_hint = who.known?.cat ?? null;
-    facts.subscription = !!who.known?.sub;
+    facts.category_hint = who.known?.category ?? null;
+    facts.subscription = !!who.known?.subscription;
     reasons.push(who.how === "known" ? `comerciante conocido (${who.name})` : who.how === "payee" ? `destinatario del pago: ${who.name}` : who.how === "body" ? `comercio del aviso: ${who.name}` : `remitente: ${who.name}`);
   } else if (who.gateway) reasons.push(`no se ve el comercio detrás de ${who.gateway}`);
   else if (who.bank) reasons.push("aviso del banco sin comercio");
   else reasons.push("comerciante no identificado");
 
   // shops and food never are a subscription by themselves; others need subscription words outside footer links
-  const shopLike = !!who.known && SHOP_CATS.has(who.known.cat);
+  const shopLike = !!who.known && SHOP_CATS.has(who.known.category);
   const fullBare = full.replace(SUB_FOOTER, " ");
   const subs = shopLike ? PRIME_RE.test(`${fs}\n${fb.slice(0, 600)}`) : SUB_WORDS.test(fullBare);
-  facts.subscription = subs || (!shopLike && !!who.known?.sub);
+  facts.subscription = subs || (!shopLike && !!who.known?.subscription);
   facts.period = detectPeriod(fs, fb);
   if (facts.period !== "unknown" && kind === "upcoming" && !shopLike) facts.subscription = true;
   facts.order_ref = findOrderRef(fs, fb);

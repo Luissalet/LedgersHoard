@@ -7,8 +7,8 @@ import { addDays, addMonthsToDate, daysBetween, today as todayLocal } from "./da
 import { formatCents } from "./money.js";
 import { getAccount } from "./accounts.js";
 import { getCategory } from "./categories.js";
-import { merchantKey, merchantMatches } from "./mail-match.js";
-import { knownMerchant, SHOP_CATS } from "./mail-merchants.js";
+import { merchantKey, merchantMatches, SHOP_CATS } from "./mail-match.js";
+import { lookup as knownMerchant } from "./hoard-commons/merchants.js";
 import { recurringCandidates } from "./recurring.js";
 import { notify } from "./notifications.js";
 import { appLink } from "./family.js";
@@ -343,7 +343,7 @@ export function syncFromEntries({ to, months = 18 } = {}) {
   for (const c of found.candidates) {
     if (c.variable || c.frequency !== "monthly") continue;
     const known = knownMerchant(c.counterparty);
-    if (known && (known.sub === false && SHOP_CATS.has(known.cat))) continue;
+    if (known && (known.subscription === false && SHOP_CATS.has(known.category))) continue;
     const key = merchantKey(c.counterparty);
     if (findSubscriptionByKey(key)) continue;
     const sub = createSubscription({

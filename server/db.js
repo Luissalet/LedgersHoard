@@ -1,9 +1,9 @@
-// Single SQLite connection (node:sqlite, WAL) with ordered migrations.
+// Single SQLite connection (node:sqlite, WAL, busy timeout) with ordered migrations, opened by Hoard Link's openDatabase.
 // Only the HTTP server process opens the database; the MCP bridge proxies.
-import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { openDatabase } from "./hoard-commons/server.js";
+import { merchantKey } from "./hoard-commons/merchants.js";
 
 export const DB_FILE = "ledgers-hoard.db";
 
@@ -183,73 +183,68 @@ const MIGRATIONS = [
     PRIMARY KEY (batch, line)
   );
   `,
+  // Hoard Link's merchant keys: a merchant that is not in the family table is keyed by its folded name without the legal suffix
+  // ("bar manolo s l" is now "bar manolo"), and the table knows more merchants. What was stored under the old key is re-keyed once.
+  rekeyMerchants,
 ];
 
-let connection = null;
+/** The key the app used before the shared merchant table: the folded name, punctuation as single spaces. */
+const legacyKey = (name) => String(name ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+
+function rekeyMerchants(raw) {
+  const taken = new Set(raw.prepare("SELECT merchant_key FROM subscriptions").all().map((r) => r.merchant_key));
+  for (const row of raw.prepare("SELECT id, merchant, merchant_key FROM subscriptions").all()) {
+    if (row.merchant_key !== legacyKey(row.merchant)) continue;          // a known merchant, or a key built another way (Google Play products)
+    const next = merchantKey(row.merchant);
+    if (!next || next === row.merchant_key || taken.has(next)) continue;
+    raw.prepare("UPDATE subscriptions SET merchant_key = ? WHERE id = ?").run(next, row.id);
+    taken.delete(row.merchant_key);
+    taken.add(next);
+  }
+  for (const row of raw.prepare("SELECT message_id, facts FROM mail_messages WHERE json_extract(facts, '$.merchant_key') IS NOT NULL").all()) {
+    let facts;
+    try { facts = JSON.parse(row.facts); } catch { continue; }
+    if (!facts.merchant || facts.merchant_key !== legacyKey(facts.merchant)) continue;
+    const next = merchantKey(facts.merchant);
+    if (!next || next === facts.merchant_key) continue;
+    raw.prepare("UPDATE mail_messages SET facts = ? WHERE message_id = ?").run(JSON.stringify({ ...facts, merchant_key: next }), row.message_id);
+  }
+}
+
+let database = null;
 let dataDirectory = null;
 
 export function init(dataDir) {
-  if (connection) return connection;
-  fs.mkdirSync(dataDir, { recursive: true });
+  if (database) return database.raw;
+  database = openDatabase(path.join(dataDir, DB_FILE), { migrations: MIGRATIONS });
   dataDirectory = dataDir;
-  connection = new DatabaseSync(path.join(dataDir, DB_FILE));
-  connection.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
-  migrate(connection);
-  return connection;
+  return database.raw;
 }
 
 export function db() {
-  if (!connection) throw new Error("Database not initialised. Call init(dataDir) first.");
-  return connection;
+  if (!database) throw new Error("Database not initialised. Call init(dataDir) first.");
+  return database.raw;
 }
 
 export function dataDir() {
   return dataDirectory;
 }
 
+/** Checkpoints the WAL and closes. */
 export function close() {
-  if (connection) connection.close();
-  connection = null;
+  if (database) database.close();
+  database = null;
   dataDirectory = null;
-}
-
-function migrate(conn) {
-  conn.exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
-  const row = conn.prepare("SELECT MAX(version) AS v FROM schema_version").get();
-  const current = row?.v || 0;
-  for (let i = current; i < MIGRATIONS.length; i++) {
-    conn.exec("BEGIN");
-    try {
-      conn.exec(MIGRATIONS[i]);
-      conn.prepare("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)").run(i + 1, now());
-      conn.exec("COMMIT");
-    } catch (error) {
-      conn.exec("ROLLBACK");
-      throw error;
-    }
-  }
 }
 
 export const uid = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 
-/** Run fn inside a transaction; nested calls reuse the outer one. */
-let depth = 0;
+/** Run fn inside a transaction (BEGIN IMMEDIATE); a nested call is a savepoint. fn must be synchronous. */
 export function transaction(fn) {
-  const conn = db();
-  if (depth > 0) return fn();
-  conn.exec("BEGIN");
-  depth++;
-  try {
-    const out = fn();
-    conn.exec("COMMIT");
-    return out;
-  } catch (error) {
-    conn.exec("ROLLBACK");
-    throw error;
-  } finally {
-    depth--;
-  }
+  if (!database) db();
+  return database.tx(fn);
 }
 
 export function getSetting(key, fallback = null) {

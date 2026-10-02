@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { bootServer } from "./helpers.js";
 import { installFakeSource, captureNotifications } from "./mail-helpers.js";
 import { parseMail, normText, findOrderRef, cleanMerchantName } from "../server/mail-parse.js";
-import { fold } from "../server/mail-merchants.js";
+import { fold } from "../server/hoard-commons/text.js";
 import * as engine from "../server/mail-engine.js";
 import * as subs from "../server/subscriptions.js";
 import { updateMailSettings, mailSettings } from "../server/mail-settings.js";

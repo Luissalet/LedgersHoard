@@ -7,7 +7,7 @@ import { mailSettings } from "./mail-settings.js";
 import * as subs from "./subscriptions.js";
 import { listNotifications } from "./notifications.js";
 import { now } from "./db.js";
-import { fold } from "./mail-merchants.js";
+import { fold } from "./hoard-commons/text.js";
 import { merchantKey } from "./mail-match.js";
 import { fail, monthField, amountField, resolveCategoryOrFail, parseAmountOrFail, tool, RO } from "./agent-helpers.js";
 import { thisMonth, isMonth, parseDate } from "./dates.js";

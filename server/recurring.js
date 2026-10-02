@@ -2,10 +2,10 @@
 import { db } from "./db.js";
 import { addMonths, isMonth, monthRange, thisMonth } from "./dates.js";
 import { formatCents } from "./money.js";
+import { plainKey } from "./hoard-commons/merchants.js";
 
 const monthIndex = (date) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7));
-export const merchantKey = (name) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-  .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+export const merchantKey = (name) => plainKey(String(name ?? ""));
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)];

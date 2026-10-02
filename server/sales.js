@@ -6,7 +6,7 @@ import { createEntry } from "./entries.js";
 import { listAccounts, resolveAccountFuzzy } from "./accounts.js";
 import { listCategories, resolveCategory } from "./categories.js";
 import { callApp, linkRefs, txRef } from "./family.js";
-import { fold } from "./mail-merchants.js";
+import { fold } from "./hoard-commons/text.js";
 
 const fail = (message, status = 400, extra = {}) => { throw Object.assign(new Error(message), { status, ...extra }); };
 const SALES_WORDS = /\b(ventas?|sales|ingresos? por ventas|tienda)\b/;
