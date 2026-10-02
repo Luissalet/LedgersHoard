@@ -1,6 +1,6 @@
 // What Ledger puts on the family agenda (the hub's "Hoy" and the family calendar): subscription renewals and trial ends,
 // charges that repeat every month and are expected in the window, and money people have owed the user for over 30 days.
-import { today as todayLocal, daysBetween, addMonthsToDate } from "./dates.js";
+import { today as todayLocal, daysBetween, addMonthsToDate, addDays } from "./dates.js";
 import { formatCents } from "./money.js";
 import { listSubscriptions } from "./subscriptions.js";
 import { recurringCandidates, merchantKey } from "./recurring.js";
@@ -12,6 +12,19 @@ export const DEBT_AFTER_DAYS = 30;
 const money = (cents, currency = "EUR") => formatCents(cents, currency === "EUR" ? "€" : currency);
 const inRange = (day, from, to) => day >= from && day <= to;
 const PERIOD_TEXT = { monthly: "al mes", yearly: "al año", weekly: "a la semana", unknown: "" };
+
+export const LATE_GRACE_DAYS = 5;
+
+/** The next charge on or after `today` when the stored date already passed: one period at a time (the charge may simply not
+ *  have reached the bank yet, or the date was never refreshed). `estimated` says the date is worked out, not read. */
+export function nextChargeFrom(date, period, today) {
+  if (!date || date >= today) return { date, estimated: false };
+  let d = date;
+  for (let i = 0; i < 400 && d < today; i++) {
+    d = period === "yearly" ? addMonthsToDate(d, 12) : period === "weekly" ? addDays(d, 7) : addMonthsToDate(d, 1);
+  }
+  return { date: d, estimated: true };
+}
 
 /** A renewal weighs more the closer it is and the bigger its period (a yearly charge is a surprise; a monthly one is routine). */
 export function renewalPriority(period, daysLeft) {
@@ -30,9 +43,20 @@ export function agendaItems(from, to, _sphere = "", { today = todayLocal() } = {
       items.push({ id: `ledger:trial:${s.id}:${s.trial_end_date}`, title: `Termina la prueba de ${s.merchant}`, start: s.trial_end_date, all_day: true, kind: "deadline",
         priority: left <= 1 ? "urgent" : left <= 3 ? "high" : "normal", url: appLink("#/suscripciones"), detail: text ? `Después se cobra ${text}` : "Cancela antes si no quieres seguir" });
     }
-    if (s.next_charge_date && s.next_charge_date !== s.trial_end_date && inRange(s.next_charge_date, from, to)) {
-      items.push({ id: `ledger:renewal:${s.id}:${s.next_charge_date}`, title: `${s.merchant} se renueva`, start: s.next_charge_date, all_day: true, kind: "renewal",
-        priority: renewalPriority(s.period, daysBetween(today, s.next_charge_date)), url: appLink("#/suscripciones"), detail: text });
+    if (s.next_charge_date && s.next_charge_date !== s.trial_end_date) {
+      const late = s.next_charge_date < today ? daysBetween(s.next_charge_date, today) : 0;
+      if (late > 0 && late <= LATE_GRACE_DAYS && inRange(today, from, to)) {
+        // a charge that was due a few days ago and has not shown up: worth a look, today
+        items.push({ id: `ledger:late:${s.id}:${s.next_charge_date}`, title: `No ha llegado el cobro de ${s.merchant}`, start: today, all_day: true, kind: "followup",
+          priority: "normal", url: appLink("#/suscripciones"), detail: `Se esperaba el ${s.next_charge_date}${text ? " · " + text : ""}` });
+      } else {
+        const next = nextChargeFrom(s.next_charge_date, s.period, today);
+        if (inRange(next.date, from, to)) {
+          items.push({ id: `ledger:renewal:${s.id}:${next.date}`, title: `${s.merchant} se renueva`, start: next.date, all_day: true, kind: "renewal",
+            priority: renewalPriority(s.period, daysBetween(today, next.date)), url: appLink("#/suscripciones"),
+            detail: next.estimated ? `${text}${text ? " · " : ""}fecha estimada` : text });
+        }
+      }
     }
   }
   // charges that repeat without being a subscription: the next one after the last seen, when it falls in the window

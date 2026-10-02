@@ -573,6 +573,22 @@ test("the agenda lists renewals, trial ends, expected charges and debts older th
   assert.ok(!agendaItems("2026-11-01", "2026-11-30", "", { today: "2026-10-10" }).some((i) => i.kind === "followup"));
 });
 
+test("a renewal date that already passed is worked forward, and a charge a few days late is a follow-up", async () => {
+  fakeHub({ people: PEOPLE });
+  createSubscription({ merchant: "Red Profesional", amount_cents: 2998, period: "monthly", next_charge_date: "2026-09-04" }, { source: "mail" });
+  createSubscription({ merchant: "Nube Demo", amount_cents: 299, period: "monthly", next_charge_date: "2026-10-08" }, { source: "mail" });
+  const items = agendaItems("2026-10-01", "2026-10-31", "", { today: "2026-10-10" });
+  const by = Object.fromEntries(items.map((i) => [i.title, i]));
+  assert.ok(!items.some((i) => i.title === "Red Profesional se renueva" && i.start < "2026-10-10"), "never a renewal in the past");
+  assert.equal(by["No ha llegado el cobro de Nube Demo"].kind, "followup");
+  assert.equal(by["No ha llegado el cobro de Nube Demo"].start, "2026-10-10");
+  assert.match(by["No ha llegado el cobro de Nube Demo"].detail, /2026-10-08/);
+  const nov = agendaItems("2026-11-01", "2026-11-30", "", { today: "2026-10-10" });
+  const red = nov.find((i) => i.title === "Red Profesional se renueva");
+  assert.equal(red.start, "2026-11-04");
+  assert.match(red.detail, /fecha estimada/);
+});
+
 test("GET /api/family/agenda answers with this app's token only", async () => {
   createSubscription({ merchant: "Streaming Plus", amount_cents: 1299, period: "monthly", next_charge_date: "2026-10-25" }, { source: "mail" });
   const denied = await s.call("GET", "/api/family/agenda?from=2026-10-01&to=2026-10-31");
