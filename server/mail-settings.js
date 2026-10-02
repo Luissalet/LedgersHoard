@@ -4,7 +4,9 @@
 import { z } from "zod";
 import { getSetting, setSetting } from "./db.js";
 import { getAccount, resolveAccount } from "./accounts.js";
-import { MAIL_SOURCES, forgetInterest } from "./mail-hub.js";
+import { MAIL_SOURCES, forgetInterest } from "./mail-source.js";
+
+export const NOTIFY_VIA = ["auto", "hub", "own"];
 
 export const KEYS = {
   enabled: ["mail.enabled", 1],
@@ -21,6 +23,8 @@ export const KEYS = {
   faustus_dir: ["mail.faustus_dir", ""],
   faustus_owner: ["mail.faustus_owner", ""],
   source: ["mail.source", "auto"],
+  // where alerts go: "auto" (the hub first - quiet hours, spheres, phone - then a Windows toast), "hub" (never a toast), "own" (toast only)
+  notify_via: ["notify.via", "auto"],
 };
 const FLAGS = new Set(["enabled", "auto_record", "toast", "hub", "quiet_history"]);
 
@@ -41,6 +45,7 @@ export const settingsPatch = z.object({
   faustus_dir: z.string().trim().max(500),
   faustus_owner: z.string().trim().max(120),
   source: z.enum(MAIL_SOURCES),
+  notify_via: z.enum(NOTIFY_VIA),
 }).partial().strict();
 
 /** Typed settings: flags as booleans. */

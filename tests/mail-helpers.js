@@ -23,22 +23,34 @@ export function fakeSource(messages = [], { ok = true, error = "", delay = 0, st
   return source;
 }
 
+/** The helper runner (action, payload) the router calls, answered by a fake source: what a real mail source does around Faustus. */
+export const helperOf = (fake) => async (action, payload = {}) => {
+  if (action === "scan") return fake.scan({ ...payload, limit: payload.max });
+  if (action === "status") return fake.status();
+  return { ok: false, error: `unsupported action ${action}` };
+};
+
 export function installFakeSource(messages, options) {
   const source = fakeSource(messages, options);
   setMailSource(source);
   return source;
 }
 
-/** Collect hub events and toasts instead of sending them. */
-export function captureNotifications({ platform = "linux" } = {}) {
+/** Collect hub events, hub notifications and toasts instead of sending them. `hub: true` makes the hub's notification facet answer. */
+export function captureNotifications({ platform = "linux", hub = false, held = "" } = {}) {
   const events = [];
   const scripts = [];
+  const notices = [];
   setNotifyBackends({
     platform: () => platform,
     hub: async (type, data) => { events.push({ type, data }); return true; },
-    powershell: async (exe, args) => { scripts.push({ exe, args }); return { code: 0 }; },
+    runner: async ({ command, args }) => { scripts.push({ exe: command, args }); return { code: 0 }; },
+    notifyHub: {
+      hubAvailable: async () => hub,
+      notify: async (title, body, options) => { notices.push({ title, body, ...options }); return { ok: true, ...(held ? { held } : {}) }; },
+    },
   });
-  return { events, scripts, restore: resetNotifyBackends };
+  return { events, scripts, notices, restore: resetNotifyBackends };
 }
 
 export { setMailSource as setMailSourceFor };

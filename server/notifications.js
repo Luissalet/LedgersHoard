@@ -1,56 +1,31 @@
-// Notifications: a stored list (last 200) for the UI and tools, a Windows
-// toast through PowerShell (win32 only) and events on the Hoard family bus.
+// Notifications: a stored list (last 200) for the UI and tools, the person told through the family hub's notification facet
+// (quiet hours, spheres, phone) with a Windows toast on this computer as the fallback, and events on the Hoard family bus.
 // A notification is created once per dedupe key; during a mail scan they are
 // collected in a batch so a first scan of two months does not raise dozens of
 // toasts.
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execFile } from "node:child_process";
 import { db, uid, now, getSetting } from "./db.js";
 import * as family from "./hoard-link.js";
 
+// The toast itself (the PowerShell script, escaping, hidden window) is the family's. Re-exported because the tests and callers
+// have always imported them from here.
+export { buildToastPs1, xmlEscape } from "./hoard-link.js";
+
 export const MAX_STORED = 200;
 export const SEVERITY_RANK = { low: 0, medium: 1, high: 2 };
-const POWERSHELL_APP_ID = String.raw`{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe`;
-
-export function xmlEscape(text) {
-  return String(text ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-}
-
-const httpUrl = (url) => (/^https?:\/\//i.test(String(url ?? "")) ? String(url) : "");
-
-/** PowerShell that shows one toast through Windows.UI.Notifications (no module needed). */
-export function buildToastPs1(title, body, url = "") {
-  const launch = httpUrl(url);
-  const attrs = launch ? ` activationType="protocol" launch="${xmlEscape(launch)}"` : "";
-  const xml = `<toast${attrs}><visual><binding template="ToastGeneric"><text>${xmlEscape(String(title).slice(0, 120))}</text><text>${xmlEscape(String(body).slice(0, 300))}</text></binding></visual></toast>`;
-  return [
-    "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null",
-    "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null",
-    `$xml = @'\n${xml}\n'@`,
-    "$doc = New-Object Windows.Data.Xml.Dom.XmlDocument",
-    "$doc.LoadXml($xml)",
-    "$toast = [Windows.UI.Notifications.ToastNotification]::new($doc)",
-    `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('${POWERSHELL_APP_ID}').Show($toast)`,
-    "",
-  ].join("\n");
-}
-
-const defaultPowershell = (exe, args, options) => new Promise((resolve) => {
-  execFile(exe, args, { windowsHide: true, timeout: 20_000, ...options }, (error) => resolve({ code: error ? (error.code ?? 1) : 0, error: error?.message || "" }));
-});
+const APP_NAME = "Ledger's Hoard";
+const PRIORITY = { low: "low", medium: "normal", high: "high" };
 
 const backends = {
   platform: () => process.platform,
-  powershell: defaultPowershell,
-  tmpdir: () => os.tmpdir(),
+  /** Runs the PowerShell of a toast: ({ command, args, timeoutMs }) => { code }; null is the family's own runner. */
+  runner: null,
   hub: (type, data) => family.emit(type, data),
+  /** The hub's notification facet ({ notify, hubAvailable }); null is the family client. */
+  notifyHub: null,
 };
 const initial = { ...backends };
 
-/** Tests swap the platform, the PowerShell runner and the hub emitter. */
+/** Tests swap the platform, the PowerShell runner, the hub emitter and the hub's notification facet. */
 export function setNotifyBackends(patch) {
   Object.assign(backends, patch);
 }
@@ -60,18 +35,9 @@ export function resetNotifyBackends() {
 
 /** Show one Windows toast; resolves "" on success or a short reason. */
 export async function showToast(title, body, url = "") {
-  if (backends.platform() !== "win32") return "no es Windows";
-  const file = path.join(backends.tmpdir(), `ledger-toast-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
-  try {
-    // BOM: Windows PowerShell 5.1 reads UTF-8 only with it
-    fs.writeFileSync(file, String.fromCharCode(0xfeff) + buildToastPs1(title, body, url), "utf8");
-    const done = await backends.powershell("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", file], { windowsHide: true });
-    return done?.code === 0 || done?.code === undefined ? "" : `powershell ${done.code}`;
-  } catch (error) {
-    return error?.code || error?.name || "error";
-  } finally {
-    try { fs.unlinkSync(file); } catch { /* already gone */ }
-  }
+  const done = await family.showToast(title, body, url || null, { appName: APP_NAME, platform: backends.platform(), runner: backends.runner });
+  if (done.ok) return "";
+  return done.unsupported ? "no es Windows" : String(done.error || "error");
 }
 
 const row = (r) => (r ? { ...r, payload: JSON.parse(r.payload || "{}"), delivered: JSON.parse(r.delivered || "{}") } : null);
@@ -125,7 +91,18 @@ function setDelivered(id, patch) {
 
 const MAX_TOASTS = 3;
 
-/** Deliver a list of new notifications: every one to the family bus, toasts condensed. */
+/** The person is told through the hub (quiet hours, spheres, phone, ntfy) and, when the hub is not there, by a toast on this computer. */
+const router = () => family.notifyRouter({
+  via: () => getSetting("notify.via", "auto"),
+  ownSend: async (title, body, o) => {
+    const reason = await showToast(title, body, o.url);
+    return reason === "" ? { ok: true } : { ok: false, error: reason };
+  },
+  app: "ledger",
+  hub: backends.notifyHub,
+});
+
+/** Deliver a list of new notifications: every one to the family bus, then the person is told, condensed. */
 export async function deliver(items) {
   if (!items.length) return;
   const toastOn = Boolean(Number(getSetting("notify.toast", 1)));
@@ -139,13 +116,15 @@ export async function deliver(items) {
   const loud = items.filter((i) => SEVERITY_RANK[i.severity] >= 1);
   const quiet = items.filter((i) => SEVERITY_RANK[i.severity] < 1);
   const toasts = [];
-  for (const item of loud.slice(0, MAX_TOASTS)) toasts.push({ ids: [item.id], title: item.title, body: item.body });
+  for (const item of loud.slice(0, MAX_TOASTS)) toasts.push({ ids: [item.id], title: item.title, body: item.body, priority: PRIORITY[item.severity] || "normal", url: item.url, dedupeKey: item.dedupe_key });
   const rest = [...loud.slice(MAX_TOASTS), ...quiet];
-  if (rest.length === 1) toasts.push({ ids: [rest[0].id], title: rest[0].title, body: rest[0].body });
-  else if (rest.length > 1) toasts.push({ ids: rest.map((i) => i.id), title: "Ledger's Hoard", body: `${rest.length} avisos nuevos: ${rest.slice(0, 3).map((i) => i.title).join(" · ")}${rest.length > 3 ? "…" : ""}` });
+  if (rest.length === 1) toasts.push({ ids: [rest[0].id], title: rest[0].title, body: rest[0].body, priority: PRIORITY[rest[0].severity] || "low", url: rest[0].url, dedupeKey: rest[0].dedupe_key });
+  else if (rest.length > 1) toasts.push({ ids: rest.map((i) => i.id), title: APP_NAME, body: `${rest.length} avisos nuevos: ${rest.slice(0, 3).map((i) => i.title).join(" · ")}${rest.length > 3 ? "…" : ""}`, priority: "low", url: "", dedupeKey: `ledger:summary:${rest.map((i) => i.id).join(",")}`.slice(0, 200) });
+  const out = router();
   for (const t of toasts) {
-    const reason = await showToast(t.title, t.body);
-    for (const id of t.ids) setDelivered(id, { toast: reason === "" ? true : reason });
+    const res = await out.send(t.title, t.body, { priority: t.priority, url: t.url, group: "ledger", dedupeKey: t.dedupeKey });
+    // `toast`: the person was told (true) or why not; `via`: through the hub or by a toast here; `held`: the hub kept it back on purpose
+    for (const id of t.ids) setDelivered(id, { toast: res.ok ? true : (res.why || "failed"), via: res.via, ...(res.held ? { held: res.held } : {}) });
   }
 }
 

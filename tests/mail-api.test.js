@@ -172,7 +172,7 @@ test("mail_status through the tool and the routes", async () => {
 
 test("settings route: defaults, validation, and the account is stored as an id", async () => {
   const defaults = (await s.call("GET", "/api/mail/settings")).body;
-  assert.deepEqual(defaults, { enabled: true, auto_record: true, account: "", interval_min: 15, first_days: 62, window_days: 14, min_confidence: 70, review_above: 500, toast: true, hub: true, quiet_history: true, faustus_dir: "", faustus_owner: "", source: "auto" });
+  assert.deepEqual(defaults, { enabled: true, auto_record: true, account: "", interval_min: 15, first_days: 62, window_days: 14, min_confidence: 70, review_above: 500, toast: true, hub: true, quiet_history: true, faustus_dir: "", faustus_owner: "", source: "auto", notify_via: "auto" });
   const put = await s.call("PUT", "/api/mail/settings", { interval_min: 30, auto_record: false, account: "Banco", faustus_owner: "luis", toast: false });
   assert.equal(put.status, 200, JSON.stringify(put.body));
   assert.equal(put.body.interval_min, 30);
@@ -339,27 +339,27 @@ test("toast: PowerShell script with BOM, escaped text, hidden window, only on Wi
   const files = [];
   setNotifyBackends({
     platform: () => "win32",
-    powershell: async (exe, args, options) => {
+    runner: async ({ command, args }) => {
       const file = args[args.indexOf("-File") + 1];
       files.push({ file, bytes: (await import("node:fs")).readFileSync(file) });
-      ran.push({ exe, args, options });
+      ran.push({ command, args });
       return { code: 0 };
     },
   });
   try {
     assert.equal(await showToast('Netflix <12,99 €> & "más"', "Pago apuntado\ncon tilde: ñ"), "");
     assert.equal(ran.length, 1);
-    assert.equal(ran[0].exe, "powershell");
-    for (const a of ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"]) assert.ok(ran[0].args.includes(a), a);
-    assert.equal(ran[0].options.windowsHide, true);
+    assert.equal(ran[0].command, "powershell");
+    for (const a of ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]) assert.ok(ran[0].args.includes(a), a);
     const bytes = files[0].bytes;
     assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], "UTF-8 BOM so Windows PowerShell 5.1 reads accents");
     const text = bytes.toString("utf8");
     assert.match(text, /ToastNotificationManager/);
     assert.match(text, /&lt;12,99 €&gt; &amp; &quot;más&quot;/);
+    assert.match(text, /Ledger&#x27;s Hoard/, "the toast says whose it is");
     assert.equal((await import("node:fs")).existsSync(files[0].file), false, "temp script removed");
-    setNotifyBackends({ powershell: async () => ({ code: 1 }) });
-    assert.match(await showToast("a", "b"), /powershell 1/);
+    setNotifyBackends({ runner: async () => ({ code: 1 }) });
+    assert.match(await showToast("a", "b"), /powershell exit 1/);
     setNotifyBackends({ platform: () => "linux" });
     assert.equal(await showToast("a", "b"), "no es Windows");
   } finally {
