@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Empty, ConfirmDialog, useAction, Field } from "../components/ui.jsx";
 import { EntryRow, EntryFields, EntryForm, emptyDraft } from "../components/EntryRow.jsx";
+import SplitDialog from "../components/SplitDialog.jsx";
 import { formatCents, today, thisMonth } from "../format.js";
 
 function TransferForm({ accounts, onDone, run, busy }) {
@@ -35,6 +36,9 @@ function hashFilter() {
   return Object.keys(out).length ? out : null;
 }
 
+/** #/movimientos?tx=<id>: the link another app uses to point at one movement. */
+const hashTx = () => new URLSearchParams(window.location.hash.split("?")[1] || "").get("tx") || "";
+
 export default function Movimientos() {
   const { accounts, categories, settings, refresh, notify } = useApp();
   const symbol = settings?.currency_symbol || "€";
@@ -43,19 +47,31 @@ export default function Movimientos() {
   const [draft, setDraft] = useState(() => emptyDraft({ date: today(), account_id: accounts.find((a) => !a.archived)?.id || "" }));
   const [pendingDelete, setPendingDelete] = useState(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [tx, setTx] = useState(hashTx);
+  const [splitting, setSplitting] = useState(null);
   const [run, busy] = useAction(notify);
   const activeAccounts = accounts.filter((a) => !a.archived);
 
   const load = useCallback(async () => {
     try {
-      setResult(await api.entries.list({ ...filter, limit: 300 }));
+      if (tx) {
+        const one = await api.entries.get(tx);
+        setResult({ items: one ? [one] : [], total: one ? 1 : 0 });
+      } else {
+        setResult(await api.entries.list({ ...filter, limit: 300 }));
+      }
     } catch (e) {
+      setResult({ items: [], total: 0 });
       notify({ kind: "error", text: e.message });
     }
-  }, [filter, notify]);
+  }, [filter, tx, notify]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const onHash = () => { const f = hashFilter(); if (f) setFilter((cur) => ({ ...cur, to: "", text: "", ...f })); };
+    const onHash = () => {
+      setTx(hashTx());
+      const f = hashFilter();
+      if (f) setFilter((cur) => ({ ...cur, to: "", text: "", ...f }));
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -89,6 +105,13 @@ export default function Movimientos() {
     if (out) await Promise.all([load(), refresh()]);
   };
 
+  const openDoc = async (doc) => {
+    const out = await run(() => api.entries.docLink(doc.ref));
+    if (out?.url) window.open(out.url, "_blank", "noopener");
+    else if (out) notify({ kind: "error", text: out.error || "No se pudo abrir el documento: la app que lo guarda no responde." });
+  };
+  const showAll = () => { setTx(""); window.location.hash = "#/movimientos"; };
+
   const sum = result.items.reduce((s, e) => s + e.amount_cents, 0);
 
   return (
@@ -97,8 +120,14 @@ export default function Movimientos() {
       description="Apunta gastos e ingresos en la fila superior: importe negativo para gasto, positivo para ingreso. Enter guarda, Escape cancela."
       actions={<button type="button" className="btn" onClick={() => setShowTransfer((v) => !v)} aria-expanded={showTransfer}>Traspaso entre cuentas</button>}
     >
+      {tx && (
+        <div className="panel mb-4 flex flex-wrap items-center justify-between gap-2 text-[13px]" role="status">
+          <span>Mostrando un solo movimiento, el que enlaza otra app.</span>
+          <button type="button" className="btn btn-sm" onClick={showAll}>Ver todos</button>
+        </div>
+      )}
       {showTransfer && <div className="mb-4"><TransferForm accounts={activeAccounts} run={run} busy={busy} onDone={() => { setShowTransfer(false); load(); refresh(); }} /></div>}
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-[150px_150px_1fr_1fr_1fr]">
+      {!tx && <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-[150px_150px_1fr_1fr_1fr]">
         <input type="date" className="field field-sm" value={filter.from} onChange={setF("from")} aria-label="Desde" />
         <input type="date" className="field field-sm" value={filter.to} onChange={setF("to")} aria-label="Hasta" />
         <select className="field field-sm" value={filter.account} onChange={setF("account")} aria-label="Filtrar por cuenta">
@@ -111,7 +140,7 @@ export default function Movimientos() {
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <input className="field field-sm col-span-2 md:col-span-1" placeholder="Buscar concepto o nota" value={filter.text} onChange={setF("text")} aria-label="Buscar" />
-      </div>
+      </div>}
       <Section aside={<span className="help num">{result.total} movimientos · suma {formatCents(sum, symbol)}</span>} title="Listado">
         {!activeAccounts.length ? (
           <Empty text="Necesitas una cuenta antes de apuntar movimientos." action={<a href="#/cuentas" className="btn btn-primary">Crear cuenta</a>} />
@@ -123,7 +152,7 @@ export default function Movimientos() {
             <table className="table table-fixed min-w-[760px]">
               <colgroup>
                 <col className="w-[138px]" /><col className="w-[92px]" /><col className="w-[132px]" /><col className="w-[144px]" /><col />
-                <col className="hidden lg:table-column" /><col className="w-[152px]" />
+                <col className="hidden lg:table-column" /><col className="w-[232px]" />
               </colgroup>
               <thead>
                 <tr><th>Fecha</th><th>Importe</th><th>Cuenta</th><th>Categoría</th><th>Concepto</th><th className="hidden lg:table-cell">Nota</th><th></th></tr>
@@ -133,7 +162,7 @@ export default function Movimientos() {
                   <EntryFields draft={draft} setDraft={setDraft} accounts={activeAccounts} categories={categories} onSubmit={add} submitLabel="Añadir" busy={busy} />
                 </tr>
                 {result.items.map((e) => (
-                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={symbol} onSave={save} onDelete={setPendingDelete} busy={busy} />
+                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={symbol} onSave={save} onDelete={setPendingDelete} onSplit={setSplitting} onOpenDoc={openDoc} highlight={!!tx} busy={busy} />
                 ))}
               </tbody>
             </table>
@@ -141,6 +170,7 @@ export default function Movimientos() {
           </div>
         )}
       </Section>
+      <SplitDialog entry={splitting} symbol={symbol} run={run} busy={busy} onClose={() => setSplitting(null)} onDone={(out) => { if (out) setSplitting(null); load(); }} />
       <ConfirmDialog
         open={!!pendingDelete}
         title="Borrar movimiento"

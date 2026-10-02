@@ -53,9 +53,11 @@ function StatusCard({ status, source, onScan, onSettings, scanning, accounts }) 
           <dt className="help">Cuenta de correo</dt>
           <dd>
             {source == null && <span className="help">Comprobando…</span>}
-            {source && reachable && <span>{(source.accounts || []).map((a) => a.user || a.account).filter(Boolean).join(", ") || "conectada"} <span className="chip chip-income ml-1">Faustus</span></span>}
-            {source && !reachable && <span className="expense">{source.error || "Faustus no está disponible."}</span>}
+            {source && reachable && <span>{(source.accounts || []).map((a) => a.user || a.account).filter(Boolean).join(", ") || "conectada"} <span className="chip chip-income ml-1">{source.source === "hub" ? "Hub" : "Faustus"}</span></span>}
+            {source && !reachable && <span className="expense">{source.error || (source.source === "hub" ? "El hub no está disponible." : "Faustus no está disponible.")}</span>}
           </dd>
+          <dt className="help">Leyendo de</dt>
+          <dd>{source?.source === "hub" ? "la pasarela de correo del hub" : source?.source === "faustus" ? "el ayudante de Faustus" : <span className="help">…</span>}{source?.mode === "auto" && <span className="help"> (automático)</span>}</dd>
           <dt className="help">Última lectura</dt>
           <dd>
             {run ? <>{clock(run.ts)} {run.ok ? <span className="help">· {run.scanned} correos, {run.recorded} apuntados, {run.review} por revisar</span> : <span className="expense">· falló: {run.error}</span>}</> : <span className="help">Todavía no se ha leído nada.</span>}
@@ -73,6 +75,13 @@ function StatusCard({ status, source, onScan, onSettings, scanning, accounts }) 
           <Toggle label="Aviso de Windows" checked={s.toast} onChange={(v) => onSettings({ toast: v })} />
           <Toggle label="Avisar al resto de la familia Hoard" checked={s.hub} onChange={(v) => onSettings({ hub: v })} />
           <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Origen del correo" help="Automático usa el hub si su pasarela está encendida y, si no, el ayudante de Faustus.">
+              <select className="field field-sm" value={s.source || "auto"} onChange={(e) => onSettings({ source: e.target.value })}>
+                <option value="auto">Automático</option>
+                <option value="hub">El hub de la familia</option>
+                <option value="faustus">Faustus</option>
+              </select>
+            </Field>
             <Field label="Cuenta para los cobros" help="Si hay una sola cuenta activa, se usa sin elegir.">
               <select className="field field-sm" value={s.account} onChange={(e) => onSettings({ account: e.target.value })}>
                 <option value="">Automática</option>

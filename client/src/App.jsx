@@ -8,6 +8,7 @@ import Categorias from "./pages/Categorias.jsx";
 import Importar from "./pages/Importar.jsx";
 import Informes from "./pages/Informes.jsx";
 import Prevision from "./pages/Prevision.jsx";
+import Compartidos from "./pages/Compartidos.jsx";
 import Correo from "./pages/Correo.jsx";
 import Suscripciones from "./pages/Suscripciones.jsx";
 import Ajustes from "./pages/Ajustes.jsx";
@@ -15,6 +16,7 @@ import Ajustes from "./pages/Ajustes.jsx";
 const PAGES = [
   { path: "resumen", label: "Resumen", icon: "M3 12h18M3 6h18M3 18h12", component: Resumen },
   { path: "movimientos", label: "Movimientos", icon: "M4 7h16M4 12h16M4 17h10", component: Movimientos },
+  { path: "compartidos", label: "Compartidos", icon: "M8 11a3 3 0 100-6 3 3 0 000 6zM16 11a3 3 0 100-6 3 3 0 000 6zM2 20c0-3 3-5 6-5s6 2 6 5M14 15c3 0 8 1 8 5", component: Compartidos },
   { path: "cuentas", label: "Cuentas", icon: "M3 7h18v12H3zM3 11h18", component: Cuentas },
   { path: "categorias", label: "Categorías", icon: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", component: Categorias },
   { path: "importar", label: "Importar", icon: "M12 4v12m0 0l-4-4m4 4l4-4M4 20h16", component: Importar },

@@ -159,7 +159,7 @@ export function forecastMonth({ month, today = todayLocal() } = {}) {
   const sym = p.currency === "EUR" ? "€" : p.currency;
   const fmt = (c) => formatCents(c, sym);
   return {
-    ok: true, month: m, currency: p.currency,
+    ok: true, month: m, currency: p.currency, past: !!p.past,
     today_balance: dec(p.today_cents), expected_in: dec(p.expected_in), expected_out: dec(p.expected_out), projected_end: dec(p.end_cents),
     today_balance_cents: p.today_cents, expected_in_cents: p.expected_in, expected_out_cents: p.expected_out, projected_end_cents: p.end_cents,
     projected_end_text: fmt(p.end_cents),

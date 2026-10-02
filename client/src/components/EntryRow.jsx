@@ -68,7 +68,7 @@ export function draftFromEntry(e) {
 }
 
 /** One entry: read-only row that switches to the inline editor. */
-export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete, busy }) {
+export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete, onSplit, onOpenDoc, highlight, busy }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => draftFromEntry(entry));
   const start = () => { setDraft(draftFromEntry(entry)); setEditing(true); };
@@ -82,16 +82,20 @@ export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete
   }
   const isTransfer = !!entry.transfer_id;
   return (
-    <tr>
+    <tr style={highlight ? { background: "var(--soft)" } : undefined} data-entry={entry.id}>
       <td className="num whitespace-nowrap">{dateLabel(entry.date)}</td>
       <td className={`num whitespace-nowrap font-semibold ${entry.amount_cents < 0 ? "expense" : "income"}`}>{formatCents(entry.amount_cents, symbol)}</td>
       <td>{entry.account_name}</td>
       <td>{isTransfer ? <span className="chip">Traspaso</span> : entry.category_name || <span className="help">—</span>}</td>
       <td className="truncate" title={entry.counterparty}>{entry.counterparty || <span className="help">(sin concepto)</span>}
         {entry.source !== "manual" && <span className="chip ml-2">{entry.source === "agent" ? "asistente" : entry.source === "mail" ? "correo" : "importado"}</span>}
+        {(entry.docs || []).map((d) => (
+          <button key={d.ref} type="button" className="chip chip-income ml-2" title={`Abrir ${d.ref}`} onClick={() => onOpenDoc && onOpenDoc(d)}>{d.label || "Documento"}</button>
+        ))}
       </td>
       <td className="hidden truncate lg:table-cell" title={entry.note}>{entry.note}</td>
       <td className="whitespace-nowrap">
+        {onSplit && entry.amount_cents < 0 && !isTransfer && <button type="button" className="btn btn-sm mr-1" onClick={() => onSplit(entry)} title="Repartir este gasto con otras personas">Repartir</button>}
         <button type="button" className="btn btn-sm" onClick={start} disabled={isTransfer} title={isTransfer ? "Los traspasos se borran y se vuelven a crear" : "Editar"}>Editar</button>
         <button type="button" className="btn btn-danger btn-sm ml-1" onClick={() => onDelete(entry)}>Borrar</button>
       </td>

@@ -39,8 +39,9 @@ Una vez abierta a través del túnel, el navegador ofrece instalarla (PWA).
 
 ## Qué hace
 
-- **Resumen** — selector de mes, tiles de ingresos / gastos / neto / saldo total, barras de presupuesto por categoría (superado en color de peligro y con el texto «Superado»), últimos movimientos, saldos por cuenta y una línea «Del correo este mes» con lo que ha apuntado el correo.
-- **Movimientos** — tabla con filtros (fechas, cuenta, categoría, texto), fila de alta rápida arriba (Enter guarda, Escape cancela), edición en línea, borrado con confirmación y formulario de traspaso entre cuentas.
+- **Resumen** — selector de mes, tiles de ingresos / gastos / neto / saldo total, barras de presupuesto por categoría (superado en color de peligro y con el texto «Superado»), últimos movimientos, saldos por cuenta y una línea «Del correo este mes» con lo que ha apuntado el correo y la tarjeta «Saldo previsto a fin de mes» (con partidas desplegables).
+- **Movimientos** — tabla con filtros (fechas, cuenta, categoría, texto), fila de alta rápida arriba (Enter guarda, Escape cancela), edición en línea, borrado con confirmación y formulario de traspaso entre cuentas, etiquetas con los documentos adjuntos al movimiento (se abren en la app que los guarda) y botón «Repartir» en los gastos.
+- **Compartidos** — quién te debe por gastos que pagaste y repartiste (botón Repartir en un movimiento): saldo por persona, los gastos que lo forman y «Apuntar devolución». Abre un movimiento desde `#/movimientos?tx=<id>`.
 - **Cuentas** — efectivo, banco, tarjeta, ahorro u otra; divisa por cuenta; saldo inicial; se archivan en lugar de borrarse si tienen movimientos.
 - **Categorías** — de gasto o de ingreso, con padre opcional, color y presupuesto mensual editable al pulsar. La primera vez se crea un juego por defecto (Comida, Casa, Transporte, Ocio, Salud, Suscripciones, Ropa, Regalos, Otros gastos; Nómina, Otros ingresos).
 - **Importar** — pegad o elegid el CSV del banco. Se detectan separador (`;`, `,`, tabulador), cabecera, fechas (`DD/MM/YYYY`, `YYYY-MM-DD`, `DD-MM-YYYY`), coma decimal y columnas separadas de cargo/abono; el mapeo se corrige con desplegables; la vista previa enseña las 20 primeras filas y cuántas están duplicadas; al importar se informa de añadidas y omitidas.
@@ -90,7 +91,7 @@ Se guardan (últimos 200) y se ven en Correo y con `ledger_notifications`. Aviso
 
 `faustus-plugin.json` describe la aplicación para Faustus (comprobación de salud, arranque y comando MCP con marcadores).
 
-Herramientas (38):
+Herramientas (46):
 
 | Herramienta | Uso |
 | --- | --- |
@@ -101,7 +102,7 @@ Herramientas (38):
 | `list_entries` | Filtrar por fechas, cuenta, categoría, texto o etiqueta; máximo 200. |
 | `search_entries` | Búsqueda libre en concepto, nota, etiquetas y categoría. |
 | `summary` | Totales del mes, por categoría con presupuesto y por cuenta. |
-| `budget_status` | Presupuesto frente a gasto por categoría con `over` y un veredicto en una línea. |
+| `budget_status` | Presupuesto frente a gasto por categoría (opcionalmente una `category` y un `month`) con `over`, `left`, `ok` y un veredicto en una línea. |
 | `months_report` | Ingresos / gastos / neto por mes entre dos meses. |
 | `balance` | Saldo de una cuenta (o de todas) a una fecha. |
 | `update_entry` | Corregir un movimiento. |
@@ -123,9 +124,30 @@ Herramientas (38):
 | `subscription_update` | Cambiar estado (cancelled / paused / active), importe, periodo, categoría, próximo cobro, notas. |
 | `subscriptions_upcoming` | Cobros y fines de prueba de los próximos `days` (30). |
 | `mail_spending` | Lo apuntado desde el correo en un `month`, por comercio y categoría, con enlaces a los movimientos. |
+| `tx_find` | Buscar el movimiento de gasto que coincide con un importe y una fecha (el de una factura), con puntuación; 0,8 o más es coincidencia fuerte. |
+| `tx_attach_doc` | Guardar en un movimiento la referencia `hoard://app/tipo/id` de un documento (idempotente); sale como etiqueta que abre el documento en su app. |
+| `forecast_month` | Saldo previsto a fin de mes (hasta 12 meses por delante): saldo de hoy, suscripciones, recibos e ingresos que se repiten y la media de 3 meses para el resto del gasto. Cada partida dice de dónde sale. |
+| `split_add` | Repartir un movimiento que pagaste entre personas (por parte, importe o a partes iguales contigo). Las personas se resuelven en la libreta de la familia y el nombre se guarda por si está apagada. |
+| `splits_balance` | Quién debe qué: saldo por persona, fecha pendiente más antigua y gastos detrás. |
+| `split_settle` | Apuntar una devolución; se aplica primero a las partes abiertas más antiguas y nunca más de lo debido. |
+| `income_from_sales` | Apuntar el ingreso de un lote de ventas de Mercator, un movimiento por divisa y día, idempotente por lote y línea. |
+| `report_year` | Totales de un año por mes y por categoría. |
 | `ledger_notifications` | Avisos recientes: pagos apuntados, suscripciones nuevas, cambios de precio, pruebas, pagos fallidos. |
 
 Cada descripción termina con una línea `Sinónimos:` con las palabras que se usan en español. Si un nombre de cuenta o categoría es ambiguo, la herramienta devuelve `candidates` para que el asistente pregunte en vez de adivinar.
+
+## Familia
+
+Ledger participa en el hub de la familia Hoard, siempre de forma opcional: con el hub apagado todo lo demás responde, con un error claro donde haga falta otra app.
+
+- **Correo**: por defecto (`mail.source` = `auto`) se lee por la pasarela de correo del hub, que abre el buzón una sola vez para todas las apps; si no está encendida, se usa el ayudante de Faustus. `hub` nunca recurre al ayudante y `faustus` nunca pregunta al hub (se elige en Correo, donde también se ve «Leyendo de»). Cada pago apuntado se reclama en el hub (tipo `payment`, ref `hoard://ledger/tx/<id>`) para que otras apps no archiven el mismo correo. Se lee solo lo posterior a una marca (`mail.hub_since_id`).
+- **Agenda**: `GET /api/family/agenda` (con el token de la app) da renovaciones, fines de prueba, cargos previstos (`Cargo previsto`) y deudas de gastos compartidos de más de 30 días.
+- **Documentos**: un movimiento guarda referencias a documentos de otras apps; las etiquetas de Kafka enlazan a `#/movimientos?tx=<id>`, que muestra ese movimiento con un botón «Ver todos».
+- **Gastos compartidos**: botón *Repartir* en un gasto de Movimientos y página **Compartidos** con saldos y devoluciones.
+- **Previsión**: tarjeta en Resumen con el saldo previsto a fin de mes y sus partidas.
+- **Eventos** en el bus del hub: `ledger.mail.recorded` {tx_id, entry_id, merchant, amount, amount_cents, currency, date, order_ref?, message_id, items}, `ledger.payment.failed`, `ledger.subscription.price` (con `old_amount`) y `ledger.subscription.new` (con `url`). `amount` es un número positivo en unidades (12,99); `amount_cents` es el valor con signo guardado.
+
+Ajustes de correo nuevos: `source` (`auto` | `hub` | `faustus`).
 
 ## Datos y límites
 
@@ -145,6 +167,6 @@ npm run build   # vite build → dist/
 
 Las pruebas usan carpetas temporales y nunca tocan `data/`.
 
-Los módulos del correo están en `server/mail-*.js`, `server/subscriptions.js`, `server/notifications.js` y `server/mail/faustus_mail.py`; las páginas, en `client/src/pages/Correo.jsx` y `Suscripciones.jsx`.
+Los módulos de la familia están en `server/family*.js`, `mail-hub.js`, `tx-links.js`, `splits.js`, `sales.js`, `outlook.js` y `agenda.js`; las páginas, en `Compartidos.jsx` y la tarjeta de `Resumen.jsx`. Los módulos del correo están en `server/mail-*.js`, `server/subscriptions.js`, `server/notifications.js` y `server/mail/faustus_mail.py`; las páginas, en `client/src/pages/Correo.jsx` y `Suscripciones.jsx`.
 
 Licencia: MIT (ver `LICENSE`).

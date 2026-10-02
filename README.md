@@ -1,6 +1,6 @@
 # Ledger's Hoard
 
-Local-first household ledger: accounts, categorised entries, monthly budgets, reports, bank CSV imports and payments read from your mail, stored in a single SQLite file on your own computer and exposed to an assistant through MCP.
+Local-first household ledger: accounts, categorised entries, monthly budgets, reports, bank CSV imports, payments read from your mail, shared expenses and a month-end forecast, stored in a single SQLite file on your own computer and exposed to an assistant through MCP.
 
 Spanish version: [`README.es.md`](README.es.md).
 
@@ -39,14 +39,15 @@ Once opened through the tunnel, the browser offers to install it (PWA).
 
 ## What it does
 
-- **Resumen** — month picker, income / expense / net / total balance tiles, budget bars per category (over budget in the danger colour, with a written "Superado" chip), recent entries and account balances, plus a «Del correo este mes» line with what the mail recorded.
-- **Movimientos** — filterable table (date range, account, category, free text) with a quick-add row at the top (Enter saves, Escape cancels), inline edit, delete with confirmation, and a transfer form to move money between accounts.
+- **Resumen** — month picker, income / expense / net / total balance tiles, budget bars per category (over budget in the danger colour, with a written "Superado" chip), recent entries and account balances, plus a «Del correo este mes» line with what the mail recorded and the «Saldo previsto a fin de mes» card (expandable lines).
+- **Movimientos** — filterable table (date range, account, category, free text) with a quick-add row at the top (Enter saves, Escape cancels), inline edit, delete with confirmation, a transfer form to move money between accounts, chips for the documents attached to a movement (they open in the app that owns them) and a «Repartir» button for expenses.
+- **Compartidos** — who owes you for expenses you paid and split (Repartir on a movement): balance per person, the expenses behind it, «Apuntar devolución». Opens a movement from `#/movimientos?tx=<id>`.
 - **Cuentas** — cash, bank, card, savings or other; currency per account; opening balance; archive instead of delete when there are entries.
 - **Categorías** — expense and income categories with optional parent, colour and a monthly budget editable in place. A Spanish default set (Comida, Casa, Transporte, Ocio, Salud, Suscripciones, Ropa, Regalos, Otros gastos; Nómina, Otros ingresos) is seeded the first time the table is empty.
 - **Importar** — paste or choose a bank CSV. Delimiter (`;`, `,`, tab), header row, dates (`DD/MM/YYYY`, `YYYY-MM-DD`, `DD-MM-YYYY`), Spanish decimal comma and separate debit/credit columns are detected; the mapping can be corrected with selects; the preview shows the first 20 rows and how many are duplicates; commit reports added / skipped.
 - **Informes** — 12-month income vs expense bars and expense-by-category donut, both inline SVG with a table view.
 - **Previsión** — save named what-if scenarios with one-time, monthly or quarterly income/expense assumptions, edit them, and compare recorded vs projected balances for 3–24 months. Observed recurring candidates can fill the assumption form for review. Transfers are already reflected in recorded balances; scenario lines never create entries. Different currencies are shown per account rather than added together.
-- **Correo** — reads the mail account connected to Faustus, finds payments (receipts, «has pagado», card notices, bills with «importe a cargar», shop orders with a total, refunds) and records them as expenses on the charge date. Status card (account read, last and next scan, last error, «Leer ahora», on/off, auto-record, account for mail charges, interval, review limit in euros, toast and family-bus switches), «Apuntado desde el correo» with Deshacer, «Por revisar» with Aceptar (merchant, amount, date, account and category editable) and Ignorar, duplicates seen, recent notifications, and a box to paste a receipt that is not in the inbox.
+- **Correo** — reads the mail account connected to Faustus, finds payments (receipts, «has pagado», card notices, bills with «importe a cargar», shop orders with a total, refunds) and records them as expenses on the charge date. Status card (mail source auto / hub / Faustus and where it reads from, account read, last and next scan, last error, «Leer ahora», on/off, auto-record, account for mail charges, interval, review limit in euros, toast and family-bus switches), «Apuntado desde el correo» with Deshacer, «Por revisar» with Aceptar (merchant, amount, date, account and category editable) and Ignorar, duplicates seen, recent notifications, and a box to paste a receipt that is not in the inbox.
 - **Suscripciones** — subscriptions found in mail (known services, subscription words) or in repeated charges (`recurring.js`; never shops or food), with monthly and yearly cost per currency, price history, next charge, trial end, Cancelada / Pausada / Editar, upcoming charges in 30 days and the alerts raised.
 - **Ajustes** — currency symbol; Faustus folder and user for the mail and «Reiniciar el correo» (start over); data folder and version shown read-only.
 
@@ -88,11 +89,11 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 
 ## Mail: payments and subscriptions
 
-Mail is read through Faustus: `server/mail/faustus_mail.py` runs with Faustus's own Python inside the Faustus folder and returns only the messages that match a payment search (`gmail_query` for Gmail, `subject_terms` for other IMAP servers). The password never reaches this app. The first scan covers `first_days` (62: this month and the previous one); later scans cover `window_days` (14). A scan runs 30 s after start and then every `interval_min` minutes, one at a time; the last 50 runs are kept.
+Mail comes from one of two sources (`mail.source`, chosen in Correo): the family hub's mail gateway, which reads the inbox once for every Hoard app, or the Faustus helper. `auto` (default) uses the hub when its gateway is on and falls back to the helper when it is not; `hub` never falls back; `faustus` never asks the hub. With the hub, Ledger registers what it searches (payment words), reads only the messages after a stored watermark (`mail.hub_since_id`; a search with a query or a longer look-back re-reads from the start and leaves it alone), and claims every payment it records (kind `payment`, ref `hoard://ledger/tx/<id>`) so other apps do not file the same mail. The registration is renewed every 6 hours and when the mail settings change. Through the helper: `server/mail/faustus_mail.py` runs with Faustus's own Python inside the Faustus folder and returns only the messages that match a payment search (`gmail_query` for Gmail, `subject_terms` for other IMAP servers). The password never reaches this app. The first scan covers `first_days` (62: this month and the previous one); later scans cover `window_days` (14). A scan runs 30 s after start and then every `interval_min` minutes, one at a time; the last 50 runs are kept.
 
 Mail text is untrusted data. `server/mail-parse.js` only pattern-matches it (ES/EN) and extracts kind (`charge`, `refund`, `upcoming`, `cancel`, `failed`, `noise`), merchant, amount and currency, charge date, period, next charge, trial end, order number and the last 4 card digits, with a confidence 0–100. The search leaves Gmail's promotions, social and forums tabs out (`-category:promotions -category:social -category:forums`). Replies (`Re:`), opinion requests («¿Qué tal tu pedido?», «Da tu opinión»), newsletters and marketing senders (`newsletter@`, `info-promo@`, `deals.` hosts), carrier notices, gift or promo mail and support conversations are noise and never reach review. A mention of a refund without any amount is not a refund. Labels followed by blank lines and then the value («TOTAL», blank line, «€ 24.03»; «Importe:», blank line, «16.92 EUR») are read, `TOTAL` beats `Subtotal`, and a delivery date («Llega el…») is never the charge date. A charge or refund with merchant, amount and date and confidence ≥ `min_confidence` (70) is recorded automatically as a negative-cent entry (`source = mail`, `source_ref = mail:<message-id>`, note `«subject» · correo`). The category is the one most used before for that counterparty, else the known-merchant hint matched by name to an existing category (never created automatically), else none. Merchant names keep the brand only («Account Services», «(Customer Support)», `.es`, `no-reply` are dropped), and a charge with merchant, amount and date plus an order or receipt cue scores at least 75. Charges above `review_above` (500 € by default, 0 turns the check off; editable in Correo) always wait in review with «importe alto (revísalo)». Anything else goes to **Por revisar** with the reason (no account chosen, several accounts, currency differs, amount or date missing, low confidence, order cancelled). Renewal notices, trials, cancellations and failed payments are not entries: they update the subscription and raise an alert.
 
-Settings (`mail.*`, `notify.*` in the settings table): `enabled`, `auto_record`, `account` (when empty and exactly one active account exists, that one is used; otherwise charges go to review), `interval_min`, `first_days`, `window_days`, `min_confidence`, `review_above`, `toast`, `hub`, `faustus_dir`, `faustus_owner`.
+Settings (`mail.*`, `notify.*` in the settings table): `enabled`, `auto_record`, `account` (when empty and exactly one active account exists, that one is used; otherwise charges go to review), `interval_min`, `first_days`, `window_days`, `min_confidence`, `review_above`, `toast`, `hub`, `faustus_dir`, `faustus_owner`, `source` (`auto` | `hub` | `faustus`). The watermark `mail.hub_since_id` is kept internally.
 
 ### How duplicates are avoided
 
@@ -106,7 +107,7 @@ A mail that cancels an order already recorded («pedido cancelado») is not a su
 
 ### Notifications
 
-Stored (last 200) and shown in Correo and by `ledger_notifications`. Windows toast through a temporary UTF-8 BOM `.ps1` run hidden with PowerShell (win32 only; low-severity ones of a scan are condensed into one toast). Family bus events (`family.emit`): `ledger.mail.recorded` {entry_id, merchant, amount, date}, `ledger.subscription.new`, `ledger.subscription.price`, `ledger.subscription.trial`, `ledger.payment.failed`, plus `ledger.subscription.upcoming` and `ledger.subscription.cancelled`. Severity: low for recorded or cancelled, medium for a new subscription, price change or yearly renewal within 7 days, high for failed payments and trials ending within 3 days. Each alert fires once (dedupe key).
+Stored (last 200) and shown in Correo and by `ledger_notifications`. Windows toast through a temporary UTF-8 BOM `.ps1` run hidden with PowerShell (win32 only; low-severity ones of a scan are condensed into one toast). Family bus events (`family.emit`): `ledger.mail.recorded` {tx_id, entry_id, merchant, amount, amount_cents, currency, date, order_ref?, message_id, items}, `ledger.payment.failed` {merchant, amount, …}, `ledger.subscription.price` {merchant, amount, old_amount, currency, …}, `ledger.subscription.new` {merchant, amount, currency, period, url, …}, `ledger.subscription.trial`, plus `ledger.subscription.upcoming` and `ledger.subscription.cancelled`. Severity: low for recorded or cancelled, medium for a new subscription, price change or yearly renewal within 7 days, high for failed payments and trials ending within 3 days. Each alert fires once (dedupe key). In event payloads `amount` is a positive number in major units (12.99), and `amount_cents` is the signed value stored; the purchases view of the hub is built from `ledger.mail.recorded`.
 
 ## Connect an assistant (MCP)
 
@@ -122,7 +123,7 @@ Stored (last 200) and shown in Correo and by `ledger_notifications`. Windows toa
 
 `faustus-plugin.json` describes the app for Faustus (health check, launch hint and the MCP command with placeholders).
 
-Tools (38):
+Tools (46):
 
 | Tool | Purpose |
 | --- | --- |
@@ -133,7 +134,7 @@ Tools (38):
 | `list_entries` | Filter by dates, account, category, text, tag; limit ≤ 200. |
 | `search_entries` | Free text over counterparty, note, tags and category. |
 | `summary` | Monthly totals, per category with budget, per account. |
-| `budget_status` | Budget vs spent per category with `over` flags and a human verdict. |
+| `budget_status` | Budget vs spent per category (optionally one `category` and a `month`) with `over`, `left`, `ok` and a human verdict. |
 | `months_report` | Per-month income / expense / net between two months. |
 | `recurring_candidates` | Likely recurring expenses, typical/latest amounts and evidence; separates stable price changes from variable bills. It does not prove a subscription or tariff change. |
 | `list_scenarios`, `get_scenario`, `create_scenario` | Browse and create saved what-if scenarios. |
@@ -159,9 +160,30 @@ Tools (38):
 | `subscription_update` | Set status (cancelled / paused / active), amount, period, category, next charge, notes. |
 | `subscriptions_upcoming` | Charges and trial ends in the next `days` (30). |
 | `mail_spending` | What the mail recorded in a `month`, by merchant and category, with entry links. |
+| `tx_find` | Find the expense movement that matches an amount and date (an invoice's), with a score; 0.8 or more is a strong match. |
+| `tx_attach_doc` | Keep a `hoard://app/kind/id` document reference on a movement (idempotent); it shows as a chip that opens the document in its app. |
+| `forecast_month` | Projected balance at the end of a month (up to 12 ahead): today's balance, subscriptions, recurring charges and income, plus the 3-month average for the rest of the spending. Every line says where it comes from. |
+| `split_add` | Split a movement you paid among people (by share, amount or equally with you). People are resolved through the family address book and the name is kept for when it is offline. |
+| `splits_balance` | Who owes what: balance per person, oldest open date, expenses behind it. |
+| `split_settle` | Record a payback; applied to the oldest open shares first, never more than is owed. |
+| `income_from_sales` | Book the income of a sales batch from Mercator, one entry per currency and day, idempotent per batch and line. |
+| `report_year` | Totals of a year by month and by category. |
 | `ledger_notifications` | Recent notifications: recorded payments, new subscriptions, price changes, trials, failed payments. |
 
 Every description ends with a `Sinónimos:` line of Spanish words. Ambiguous account or category names return `candidates` so the assistant can ask instead of guessing.
+
+## Family
+
+Ledger takes part in the Hoard family hub, always optionally: with the hub away every feature below still answers, with a clear error where another app is needed.
+
+- **Mail**: through the hub's gateway, see above.
+- **Agenda**: `GET /api/family/agenda` (bearer token of the app) lists subscription renewals, trial ends (urgent from one day left, high from three), expected recurring charges (`Cargo previsto`, low priority) and shared-expense debts older than 30 days (`followup`).
+- **Documents**: a movement keeps references to documents of other apps (`docs`); Kafka's chips link to `#/movimientos?tx=<id>`, which shows that one movement with a «Ver todos» button.
+- **Shared expenses**: *Repartir* on an expense in Movimientos, and the page **Compartidos** with balances and paybacks. People resolve through the address book (`family.call("people", …)`).
+- **Forecast**: a card in Resumen with the projected balance at the end of the month and its lines.
+- **Events** in the hub's bus: see Notifications.
+
+REST routes used by the pages: `GET /api/forecast/month`, `GET /api/reports/year`, `POST|DELETE /api/entries/:id/docs`, `GET /api/doc-link?ref=`, `GET|DELETE /api/entries/:id/splits`, `POST /api/splits`, `GET /api/splits/balance`, `POST /api/splits/settle`, `GET /api/mail/source`.
 
 ## Data and limits
 
@@ -169,7 +191,7 @@ Every description ends with a `Sinónimos:` line of Spanish words. Ambiguous acc
 - `data/mcp-token` — 32 random bytes written at every start; never committed.
 - Requests are accepted only from `localhost` / `127.0.0.1` origins; cross-site requests are rejected.
 - CSV bodies up to 10 MB; `list_entries` returns at most 200 rows per call for tools and 500 for the UI.
-- The server makes no network calls itself. Mail is read only through the Faustus helper process, which is the only part that talks to the mail server.
+- The server talks to nothing outside the machine. Mail is read through the family hub's gateway (local) or the Faustus helper process, the only part that talks to a mail server; the hub is also asked, locally, for the address book and for the address of other apps.
 - Mail text is stored as a 300-character snippet per message, with control characters removed.
 
 ## Verification
@@ -188,9 +210,10 @@ server/   app.js (Express), index.js (boot), db.js, accounts.js, categories.js, 
           reports.js, csv.js, imports.js, dates.js, money.js, routes.js, agent-tools.js,
           agent-routes.js, mcp.js, port.js, mail-engine.js, mail-parse.js, mail-merchants.js,
           mail-match.js, mail-source.js, mail-scheduler.js, mail-routes.js, mail-tools.js,
-          mail-settings.js, subscriptions.js, notifications.js, mail/faustus_mail.py (helper run by Faustus's Python)
+          mail-settings.js, mail-hub.js, subscriptions.js, notifications.js, mail/faustus_mail.py (helper run by Faustus's Python),
+          family.js (hub client), family-tools.js, family-routes.js, tx-links.js, splits.js, sales.js, outlook.js, agenda.js
 shared/   money.js (parseAmount / formatCents, used by server and client)
-client/   React 19 + Vite + Tailwind v4 (pages: Resumen, Movimientos, Cuentas, Categorías, Importar, Informes, Previsión, Correo, Suscripciones, Ajustes)
+client/   React 19 + Vite + Tailwind v4 (pages: Resumen, Movimientos, Cuentas, Categorías, Importar, Informes, Compartidos, Previsión, Correo, Suscripciones, Ajustes)
 scripts/  launch.mjs, dev.mjs
 tests/    node:test suites
 ```

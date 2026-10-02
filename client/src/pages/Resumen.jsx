@@ -47,6 +47,45 @@ export function BudgetBars({ lines, symbol }) {
   );
 }
 
+/** forecast_month: where the balance will stand at the end of the month. */
+function ForecastCard({ forecast, symbol }) {
+  const [open, setOpen] = useState(false);
+  if (!forecast?.ok) return null;
+  const sym = forecast.currency === "EUR" ? symbol : forecast.currency;
+  return (
+    <section className="panel mb-5" aria-label="Previsión del mes">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="label" style={{ color: "var(--supporting-ink)" }}>{forecast.past ? "Saldo al cierre del mes" : "Saldo previsto a fin de mes"}</span>
+        <span className={`num text-[22px] font-semibold ${forecast.projected_end_cents < 0 ? "expense" : ""}`}>{formatCents(forecast.projected_end_cents, sym)}</span>
+      </div>
+      <p className="help mt-1 text-[12px] num">
+        Hoy {formatCents(forecast.today_balance_cents, sym)} · esperas cobrar {formatCents(forecast.expected_in_cents, sym)} · y pagar {formatCents(forecast.expected_out_cents, sym)}, más el resto del gasto habitual
+      </p>
+      {forecast.lines.length > 0 && (
+        <>
+          <button type="button" className="btn-link mt-2 text-[13px]" onClick={() => setOpen((v) => !v)} aria-expanded={open}>{open ? "Ocultar detalle" : `Ver ${forecast.lines.length} partidas`}</button>
+          {open && (
+            <table className="table mt-2">
+              <thead><tr><th>Fecha</th><th>Concepto</th><th className="r">Importe</th></tr></thead>
+              <tbody>
+                {forecast.lines.map((l, i) => (
+                  <tr key={`${l.source}-${l.date}-${i}`}>
+                    <td className="num whitespace-nowrap">{dateLabel(l.date)}</td>
+                    <td>{l.label} <span className="chip ml-1">{l.kind === "subscription" ? "suscripción" : l.kind === "income" ? "ingreso fijo" : "recibo"}</span></td>
+                    <td className={`r num whitespace-nowrap ${l.amount_cents < 0 ? "expense" : "income"}`}>{formatCents(l.amount_cents, sym)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+      {forecast.note_currencies && <p className="help mt-2 text-[11px]">{forecast.note_currencies}</p>}
+      <p className="help mt-2 text-[11px]">{forecast.note}</p>
+    </section>
+  );
+}
+
 export default function Resumen() {
   const { settings } = useApp();
   const symbol = settings?.currency_symbol || "€";
@@ -54,6 +93,7 @@ export default function Resumen() {
   const [summary, setSummary] = useState(null);
   const [recent, setRecent] = useState([]);
   const [mail, setMail] = useState(null);
+  const [forecast, setForecast] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -67,6 +107,12 @@ export default function Resumen() {
   useEffect(() => {
     let alive = true;
     api.mail.spending(month).then((m) => alive && setMail(m)).catch(() => alive && setMail(null));
+    return () => { alive = false; };
+  }, [month]);
+
+  useEffect(() => {
+    let alive = true;
+    api.forecastMonth(month).then((f) => alive && setForecast(f)).catch(() => alive && setForecast(null));
     return () => { alive = false; };
   }, [month]);
 
@@ -84,6 +130,7 @@ export default function Resumen() {
             <Tile label="Neto del mes" value={formatCents(summary.net, symbol)} tone={summary.net < 0 ? "expense" : "income"} />
             <Tile label="Saldo total" value={formatCents(total, symbol)} />
           </div>
+          <ForecastCard forecast={forecast} symbol={symbol} />
           {mail && mail.count > 0 && (
             <a href="#/correo" className="panel mb-5 flex flex-wrap items-baseline justify-between gap-2 no-underline" style={{ color: "inherit" }}>
               <span>
