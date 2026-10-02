@@ -12,14 +12,14 @@ import * as accountsApi from "./accounts.js";
 import * as categoriesApi from "./categories.js";
 import { createEntry, getEntry, deleteEntry } from "./entries.js";
 import { parseMail, oneLine, normText } from "./mail-parse.js";
-import { CATEGORY_HINTS, SHOP_CATS, fold } from "./mail-merchants.js";
-import { merchantMatches, findMatchingEntry, merchantKey } from "./mail-match.js";
+import { fold } from "./hoard-commons/text.js";
+import { categoryHints } from "./hoard-commons/merchants.js";
+import { merchantMatches, findMatchingEntry, merchantKey, SHOP_CATS } from "./mail-match.js";
 import { mailSettings } from "./mail-settings.js";
-import { mailSource } from "./mail-source.js";
+import { mailSource, claimMail } from "./mail-source.js";
 import { runtime } from "./mail-runtime.js";
 import { beginBatch, flushBatch, notify, setHistory, HISTORY_AFTER_MS } from "./notifications.js";
 import * as subs from "./subscriptions.js";
-import { claimMail, storeWatermark } from "./mail-hub.js";
 import { txRef } from "./family.js";
 
 export const PAYMENT_GMAIL_QUERY = '(recibo OR factura OR "has pagado" OR "pago realizado" OR "pago recibido" OR cargo OR "se ha cargado" OR "compra realizada" OR "tu pedido" OR "total del pedido" OR suscripción OR renovación OR membresía OR "próximo cobro" OR "prueba gratuita" OR reembolso OR receipt OR invoice OR "your payment" OR "payment received" OR "payment confirmation" OR subscription OR renewal OR "your order" OR refund OR "trial ends") -category:promotions -category:social -category:forums';
@@ -104,7 +104,7 @@ export function guessCategory(merchant, hint) {
     const winner = [...counts.entries()].find(([, n]) => n === best)[0]; // first in recency order
     return { category_id: winner, how: "historial" };
   }
-  for (const name of CATEGORY_HINTS[hint] || []) {
+  for (const name of categoryHints(hint)) {
     const hit = categories.find((c) => fold(c.name).trim() === fold(name).trim());
     if (hit) return { category_id: hit.id, how: `pista «${hint}»` };
   }
@@ -598,7 +598,7 @@ export async function scanMail({ since_days = null, query = "", trigger = "manua
         }
       }
       setHistory(false);
-      storeWatermark(answer.hub_last_id);
+      await source.commit?.(answer);
       run.alerts += await subs.sweepAlerts(todayLocal());
       run.alerts += await flushBatch();
     }

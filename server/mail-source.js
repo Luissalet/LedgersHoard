@@ -1,138 +1,132 @@
-// Reads mail through the account configured in Faustus: the password never
-// leaves Faustus. server/mail/faustus_mail.py runs with Faustus's own Python
-// inside the Faustus folder; this module finds that folder and that Python,
-// sends one JSON request on stdin and takes the last JSON line of stdout.
-import fs from "node:fs";
+// Where payment mail comes from. One router (famMailRouter, from Hoard Link) reads it from the family hub's gateway
+// when that is on and from Faustus's mail helper otherwise, by the `mail.source` setting: "auto" (hub first, helper as the
+// fallback), "hub" (never falls back) or "faustus" (never asks the hub).
+//
+// The helper (server/mail/mail_helper.py, the family's one copy) runs with Faustus's own Python inside the Faustus folder, so
+// the mail password never leaves Faustus; the runner that finds Faustus and spawns it is spawnHelperRunner. What stays here is
+// what is Ledger's own: the settings it reads, the watermark it keeps, the search words it registers and how a status looks.
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getSetting } from "./db.js";
-import { createRoutedSource } from "./mail-hub.js";
+import { getSetting, setSetting } from "./db.js";
+import { familyApi } from "./family.js";
+import { famMailRouter, faustusDir as findFaustusDir, faustusPython, spawnHelperRunner, PYTHON_CANDIDATES } from "./hoard-link.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const HELPER = path.join(HERE, "mail", "faustus_mail.py");
+/** The family's mail helper (a byte-identical copy of hoard_link/mail_helper.py). */
+export const HELPER = path.join(HERE, "mail", "mail_helper.py");
 export const TIMEOUT_MS = 180_000;
+export const MAIL_SOURCES = ["auto", "hub", "faustus"];
+export const WATERMARK_KEY = "mail.hub_since_id";
+export { PYTHON_CANDIDATES };
 const STATUS_TTL_MS = 300_000;
 const STATUS_FAIL_TTL_MS = 30_000;
-
-export const PYTHON_CANDIDATES = [
-  "venv/Scripts/python.exe", ".venv/Scripts/python.exe", "venv/bin/python", ".venv/bin/python",
-];
-
-/** Default runner: spawn, feed stdin, collect stdout. Resolves { stdout, stderr, code, timedOut }. */
-export function spawnRunner({ command, args, input, cwd, env, timeoutMs }) {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
-    } catch (error) {
-      resolve({ stdout: "", stderr: String(error.message || error), code: null, timedOut: false, spawnError: error.code || "spawn" });
-      return;
-    }
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let settled = false;
-    const finish = (extra) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ stdout, stderr, code: null, timedOut, ...extra });
-    };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try { child.kill(); } catch { /* already gone */ }
-      finish({});
-    }, timeoutMs);
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk.toString("utf8")).slice(-2000); });
-    child.on("error", (error) => finish({ spawnError: error.code || "spawn" }));
-    child.on("close", (code) => finish({ code }));
-    child.stdin.on("error", () => {});
-    child.stdin.end(input);
-  });
-}
-
-const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
 const clean = (value) => String(value ?? "").trim();
 
+// The hub client is read at call time, so tests that swap it with setFamilyApi() are seen by an existing router.
+const hubApi = {
+  mailAvailable: (...a) => familyApi().mailAvailable?.(...a),
+  mailRegisterInterest: (...a) => familyApi().mailRegisterInterest?.(...a),
+  mailMessages: (...a) => familyApi().mailMessages?.(...a),
+  mailClaim: (...a) => familyApi().mailClaim?.(...a),
+};
+
 /**
- * Faustus mail source. Everything that touches the outside is injectable:
- * `runner` (the process), `getSetting` (settings table), `env`, `clock`,
- * and `roots` (the folder next to the app that is checked when nothing is
- * configured).
+ * The mail source of the engine. Everything that touches the outside is injectable: `runHelper(action, payload, timeoutMs)`
+ * (the helper), `settings` / `write` (the settings table), `env`, `clock` and `roots` (folders checked for Faustus after the
+ * usual places).
  */
-export function createMailSource({ runner = spawnRunner, settings = getSetting, env = process.env, clock = Date.now,
-  roots = [path.resolve(HERE, "..", "..", "faustus"), path.resolve(HERE, "..", "..", "..", "faustus")] } = {}) {
+export function createMailSource({ runHelper = null, settings = getSetting, write = setSetting, env = process.env, clock = Date.now,
+  roots = [], hub = hubApi, spawnFn } = {}) {
   let cachedStatus = null;
+  const setting = (key, fallback = "") => settings(key, fallback);
+  const faustusSetting = () => [setting("mail.faustus_dir"), env.LEDGER_FAUSTUS_DIR].map(clean).find(Boolean) || null;
+  const faustusDir = () => findFaustusDir(faustusSetting, { env, extra: roots });
+  const pythonOf = (root) => faustusPython(root, null, { env });
 
-  function faustusDir() {
-    const configured = [settings("mail.faustus_dir", ""), env.LEDGER_FAUSTUS_DIR, env.FAUSTUS_DIR].map(clean).filter(Boolean);
-    const candidates = configured.length ? configured : roots;
-    for (const candidate of candidates) {
-      const resolved = path.resolve(candidate);
-      if (isFile(path.join(resolved, "mcp_servers", "email_server.py"))) return resolved;
-    }
-    return null;
-  }
+  const run = runHelper || spawnHelperRunner({
+    helperPath: HELPER, setting: faustusSetting, owner: () => setting("mail.faustus_owner"), env, envDropPrefixes: ["LEDGER_"],
+    ...(spawnFn ? { spawnFn } : {}),
+  });
 
-  function pythonOf(root) {
-    for (const rel of PYTHON_CANDIDATES) {
-      const full = path.join(root, rel);
-      if (isFile(full)) return full;
-    }
-    return null;
-  }
+  const router = famMailRouter({
+    runHelper: run,
+    sourceGetter: () => setting("mail.source", "auto"),
+    interest: (criteria) => (criteria.subject_terms?.length ? { subject_terms: [...criteria.subject_terms] } : {}),
+    watermarkGet: () => Number(setting(WATERMARK_KEY, 0)) || 0,
+    watermarkSet: (value) => write(WATERMARK_KEY, Number(value)),
+    claimKind: "payment",
+    hub,
+    clock: () => clock() / 1000,
+  });
 
-  async function call(request, timeoutMs = TIMEOUT_MS) {
-    const root = faustusDir();
-    if (!root) return { ok: false, error: "No se encuentra la carpeta de Faustus (indícala en Ajustes → Correo)." };
-    const python = pythonOf(root);
-    if (!python) return { ok: false, error: "Faustus no tiene un entorno venv con Python." };
-    const owner = clean(settings("mail.faustus_owner", ""));
-    const body = owner ? { ...request, owner } : request;
-    const childEnv = { ...env, PYTHONIOENCODING: "utf-8" };
-    for (const key of Object.keys(childEnv)) if (key.startsWith("LEDGER_")) delete childEnv[key];
-    let done;
-    try {
-      done = await runner({ command: python, args: [HELPER, root], input: JSON.stringify(body), cwd: root, env: childEnv, timeoutMs });
-    } catch (error) {
-      return { ok: false, error: `Ayudante de correo: ${error?.code || error?.name || "error"}` };
-    }
-    if (done?.timedOut) return { ok: false, error: "La lectura del correo ha tardado demasiado." };
-    if (done?.spawnError) return { ok: false, error: `Ayudante de correo: ${done.spawnError}` };
-    const lines = String(done?.stdout || "").split(/\r?\n/).filter((line) => line.trim().startsWith("{"));
-    let answer = null;
-    try { answer = lines.length ? JSON.parse(lines[lines.length - 1]) : null; } catch { answer = null; }
-    if (!answer || typeof answer !== "object" || !("ok" in answer)) {
-      return { ok: false, error: `Ayudante de correo: salida inesperada (código ${done?.code ?? "?"}).` };
-    }
-    return answer;
-  }
+  /** One request to the helper (status, scan, read, send ...), whatever the mail source setting says. */
+  const call = (action, payload = {}, timeoutMs = TIMEOUT_MS) => run(action, payload, timeoutMs);
 
   async function status({ refresh = false } = {}) {
-    const key = `${faustusDir() || ""}|${clean(settings("mail.faustus_owner", ""))}`;
+    const mode = await router.mode();
+    const used = await router.sourceNow();
+    if (used === "hub") {
+      const up = await router.hubUp();
+      return { ok: up, source: "hub", mode, accounts: up ? [{ account: "hub gateway" }] : [], faustus_dir: faustusDir() || "",
+        ...(up ? {} : { error: "la pasarela de correo del hub no está encendida (o el hub no está en marcha)" }) };
+    }
+    const key = `${faustusDir() || ""}|${clean(setting("mail.faustus_owner"))}`;
     const hit = cachedStatus;
-    if (hit && !refresh && hit.key === key && clock() - hit.at < (hit.answer.ok ? STATUS_TTL_MS : STATUS_FAIL_TTL_MS)) return hit.answer;
-    const answer = await call({ action: "status" }, 60_000);
-    answer.faustus_dir = faustusDir() || "";
-    cachedStatus = { at: clock(), key, answer };
-    return answer;
+    let answer;
+    if (hit && !refresh && hit.key === key && clock() - hit.at < (hit.answer.ok ? STATUS_TTL_MS : STATUS_FAIL_TTL_MS)) answer = hit.answer;
+    else {
+      answer = await call("status", {}, 60_000);
+      answer.faustus_dir = faustusDir() || "";
+      cachedStatus = { at: clock(), key, answer };
+    }
+    return { ...answer, source: "faustus", mode };
   }
 
-  /** Scan request carrying the caller's own search words (see faustus_mail.py). */
-  const scan = ({ since_days, limit = 300, skip = [], query = "", gmail_query = "", subject_terms = [] }) =>
-    call({ action: "scan", since_days, max: limit, skip, query, gmail_query, subject_terms });
+  /**
+   * Payment mail for a search. A search with a query, or looking back further than the regular window, reads from the start of
+   * what the hub holds and leaves the watermark alone (`hub_last_id` null); otherwise `hub_last_id` is where the next read
+   * resumes once the engine has filed the messages (`commit()`).
+   */
+  async function scan({ since_days, limit = 300, skip = [], query = "", gmail_query = "", subject_terms = [] }) {
+    const window = Number(setting("mail.window_days", 14)) || 14;
+    const stored = await router.watermark();
+    const deep = Boolean(query) || (Number(since_days) > window && stored > 0);
+    const answer = await router.scanEx({ since_days, limit, skip, query, gmail_query, subject_terms, deep, skip_own: true });
+    if (!answer.ok) return { ok: false, error: answer.error || "la lectura del correo ha fallado", source: answer.source };
+    return { ok: true, error: "", source: answer.source, accounts: answer.accounts || [], messages: answer.messages || [],
+      hub_last_id: answer.source === "hub" ? answer.pending_since ?? null : null };
+  }
 
-  return { faustusDir, pythonOf, call, status, scan };
+  return {
+    router, faustusDir, pythonOf, call, status, scan,
+    /** The messages are filed: the hub watermark of the last scan moves. */
+    commit: () => router.commit(),
+    /** Say which record a hub message became ("payment", ref = the movement). Messages from the helper have no hub id. */
+    claim: (hubId, ref) => (hubId ? router.claim([{ hub_id: hubId }], ref) : Promise.resolve()),
+    /** Register the search words with the hub again at the next scan (or now with `terms`). */
+    forgetInterest: () => router.forgetInterest(),
+    registerInterest: (terms, { force = true } = {}) => router.ensureInterest({ subject_terms: terms }, { force }),
+  };
 }
 
 let current = null;
 /** Process-wide source (the hub's gateway or the Faustus helper, by mail.source); tests replace it with setMailSource(fake). */
 export function mailSource() {
-  if (!current) current = createRoutedSource({ own: createMailSource() });
+  if (!current) current = createMailSource();
   return current;
 }
 export function setMailSource(source) {
   current = source;
+}
+
+/** The mail settings or the search words changed: the hub learns them again at the next scan. */
+export const forgetInterest = () => { try { current?.forgetInterest?.(); } catch { /* nothing registered yet */ } };
+
+// Claiming does not depend on which source read the message: the hub id says it came from the gateway.
+const claimer = famMailRouter({ hub: hubApi, claimKind: "payment" });
+
+/** After a message became a record: tell the hub it is taken (kind "payment"). Never throws. */
+export async function claimMail(hubId, ref) {
+  if (!hubId) return;
+  try { await claimer.claim([{ hub_id: hubId }], ref); } catch { /* the claim is a hint */ }
 }

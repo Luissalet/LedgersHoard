@@ -4,10 +4,9 @@ import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer } from "./helpers.js";
 import { MAIL } from "./mail-fixtures.js";
-import { fakeSource, setMailSourceFor, captureNotifications } from "./mail-helpers.js";
+import { fakeSource, helperOf, setMailSourceFor, captureNotifications } from "./mail-helpers.js";
 import * as engine from "../server/mail-engine.js";
-import { createRoutedSource, registerInterest, forgetInterest, WATERMARK_KEY } from "../server/mail-hub.js";
-import { setMailSource } from "../server/mail-source.js";
+import { createMailSource, setMailSource, forgetInterest, WATERMARK_KEY } from "../server/mail-source.js";
 import { updateMailSettings } from "../server/mail-settings.js";
 import { setFamilyApi, setAppUrl } from "../server/family.js";
 import { db, getSetting, setSetting } from "../server/db.js";
@@ -140,7 +139,7 @@ test("a document reference opens in the app that owns it, through the hub", asyn
 test("mail.source auto reads from the hub, registers what it wants, claims each payment and resumes after the watermark", async () => {
   const hub = fakeHub({ messages: [hubMessage(5, "netflix"), hubMessage(6, "spotify11")] });
   const own = fakeSource([MAIL.paypal]);
-  const router = createRoutedSource({ own });
+  const router = createMailSource({ runHelper: helperOf(own) });
   setMailSource(router);
   const out = await engine.scanMail({ trigger: "test", source: router, nowMs: Date.parse("2026-10-09T12:00:00Z") });
   assert.equal(out.ok, true);
@@ -165,7 +164,7 @@ test("mail.source auto reads from the hub, registers what it wants, claims each 
 test("mail.source: hub down falls back to the helper in auto, never in hub, and faustus never asks the hub", async () => {
   const hub = fakeHub({ available: false, messages: [hubMessage(5, "netflix")] });
   const own = fakeSource([MAIL.netflix]);
-  const router = createRoutedSource({ own });
+  const router = createMailSource({ runHelper: helperOf(own) });
   const auto = await engine.scanMail({ trigger: "test", source: router });
   assert.equal(auto.recorded, 1);
   assert.equal(own.calls, 1);
@@ -185,7 +184,7 @@ test("mail.source: hub down falls back to the helper in auto, never in hub, and 
   updateMailSettings({ source: "faustus" });
   const asked = fakeHub({ messages: [hubMessage(5, "netflix")] });
   const own2 = fakeSource([MAIL.netflix]);
-  const router2 = createRoutedSource({ own: own2 });
+  const router2 = createMailSource({ runHelper: helperOf(own2) });
   await engine.scanMail({ trigger: "test", source: router2 });
   assert.equal(own2.calls, 1);
   assert.equal(asked.pages.length, 0);
@@ -194,20 +193,20 @@ test("mail.source: hub down falls back to the helper in auto, never in hub, and 
 
 test("a hub mail with a deep search re-reads from the start and leaves the watermark alone", async () => {
   const hub = fakeHub({ messages: [hubMessage(5, "netflix"), hubMessage(6, "spotify11")] });
-  const router = createRoutedSource({ own: fakeSource([]) });
+  const router = createMailSource({ runHelper: helperOf(fakeSource([])) });
   setSetting(WATERMARK_KEY, 6);
   const out = await engine.scanMail({ trigger: "test", source: router, since_days: 90, nowMs: Date.parse("2026-10-09T12:00:00Z") });
   assert.equal(out.recorded, 2);
   assert.equal(hub.pages[0], 0);
   assert.equal(getSetting(WATERMARK_KEY), 6);
   const search = await router.scan({ since_days: 90, limit: 10, skip: [], query: "spotify", subject_terms: [] });
-  assert.deepEqual(search.messages.map((m) => m.hub_id), ["6"]);
+  assert.deepEqual(search.messages.map((m) => m.hub_id), [6]);
   assert.equal(search.hub_last_id, null);
 });
 
 test("accepting a mail from review records it, claims it and tells the family", async () => {
   const hub = fakeHub({ messages: [hubMessage(8, "netflix")] });
-  const router = createRoutedSource({ own: fakeSource([]) });
+  const router = createMailSource({ runHelper: helperOf(fakeSource([])) });
   updateMailSettings({ auto_record: false });
   const scan = await engine.scanMail({ trigger: "test", source: router, nowMs: Date.parse("2026-10-09T12:00:00Z") });
   assert.equal(scan.review, 1);
@@ -221,13 +220,15 @@ test("accepting a mail from review records it, claims it and tells the family", 
 
 test("the hub registration is cached and renewed after the settings change", async () => {
   const hub = fakeHub();
-  await registerInterest(["factura"]);
-  await registerInterest(["factura"]);
+  const source = createMailSource({ runHelper: helperOf(fakeSource([])) });
+  setMailSource(source);
+  await source.registerInterest(["factura"], { force: false });
+  await source.registerInterest(["factura"], { force: false });
   assert.equal(hub.interests.length, 1);
   updateMailSettings({ interval_min: 20 });
-  await registerInterest(["factura"]);
+  await source.registerInterest(["factura"], { force: false });
   assert.equal(hub.interests.length, 2);
-  await registerInterest(["factura"], { force: true });
+  await source.registerInterest(["factura"], { force: true });
   assert.equal(hub.interests.length, 3);
 });
 
@@ -380,6 +381,26 @@ test("split_add refuses what cannot be split: income, transfers, over-allocation
   assert.equal((await tool("split_add", { tx_id: pay.id, participants: [{ person: "Marta Prueba", share: 0.5, amount: "1" }] })).status, 400);
   assert.equal((await tool("split_add", { tx_id: pay.id, participants: [] })).status, 400);
   assert.equal(db().prepare("SELECT COUNT(*) AS n FROM splits").get().n, 0, "a refused split leaves nothing behind");
+});
+
+test("split_add: shares given as fractions always add up to the expense (largest remainder, nothing over the total)", async () => {
+  fakeHub({ people: [] });
+  const odd = add("2026-10-01", -101, "Cafe Demo");
+  const halves = (await tool("split_add", { tx_id: odd.id, participants: [{ person: "Ana", share: 50 }, { person: "Luis", share: 50 }] })).body;
+  assert.equal(halves.ok, true, JSON.stringify(halves));
+  assert.equal(halves.participants.reduce((a, p) => a + p.share_cents, 0), 101, "two halves of 1,01 EUR are the whole expense");
+  assert.equal(halves.my_share_cents, 0);
+  const thirds = add("2026-10-02", -10000, "Cena Demo");
+  const t = (await tool("split_add", { tx_id: thirds.id, participants: [{ person: "Ana", share: 1 / 3 }, { person: "Luis", share: 1 / 3 }, { person: "Eva", share: 1 / 3 }] })).body;
+  assert.equal(t.participants.reduce((a, p) => a + p.share_cents, 0), 10000);
+  assert.deepEqual(t.participants.map((p) => p.share_cents).sort(), [3333, 3333, 3334]);
+  // what stays with the user is what was not given away, to the cent
+  const part = add("2026-10-03", -1001, "Taxi Demo");
+  const q = (await tool("split_add", { tx_id: part.id, participants: [{ person: "Ana", share: 0.25 }] })).body;
+  assert.equal(q.participants[0].share_cents + q.my_share_cents, 1001);
+  // more than the whole is still refused
+  const over = (await tool("split_add", { tx_id: part.id, participants: [{ person: "Ana", share: 60 }, { person: "Luis", share: 60 }] })).body;
+  assert.match(over.error, /Reparto/);
 });
 
 test("people not in the address book, or an address book that does not answer, are kept by name", async () => {
@@ -611,7 +632,7 @@ test("the mail source is a setting (auto, hub, faustus) and the status says wher
   assert.equal((await s.call("PUT", "/api/mail/settings", { source: "otro" })).status, 400);
   updateMailSettings({ source: "auto" });
   fakeHub({ available: true });
-  const router = createRoutedSource({ own: fakeSource([]) });
+  const router = createMailSource({ runHelper: helperOf(fakeSource([])) });
   const up = await router.status();
   assert.equal(up.source, "hub");
   assert.equal(up.ok, true);
