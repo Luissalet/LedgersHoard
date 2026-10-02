@@ -19,6 +19,8 @@ import { mailSource } from "./mail-source.js";
 import { runtime } from "./mail-runtime.js";
 import { beginBatch, flushBatch, notify, setHistory, HISTORY_AFTER_MS } from "./notifications.js";
 import * as subs from "./subscriptions.js";
+import { claimMail, storeWatermark } from "./mail-hub.js";
+import { txRef } from "./family.js";
 
 export const PAYMENT_GMAIL_QUERY = '(recibo OR factura OR "has pagado" OR "pago realizado" OR "pago recibido" OR cargo OR "se ha cargado" OR "compra realizada" OR "tu pedido" OR "total del pedido" OR suscripción OR renovación OR membresía OR "próximo cobro" OR "prueba gratuita" OR reembolso OR receipt OR invoice OR "your payment" OR "payment received" OR "payment confirmation" OR subscription OR renewal OR "your order" OR refund OR "trial ends") -category:promotions -category:social -category:forums';
 export const PAYMENT_SUBJECT_TERMS = [
@@ -148,6 +150,7 @@ export async function processMessage(raw, { settings = mailSettings(), nowMs = D
   const message_id = String(raw.message_id || "").trim().slice(0, 300) || syntheticId(raw);
   if (hasMail(message_id)) return { skipped: true, message_id };
   const facts = parseMail(raw, { now: nowMs });
+  if (raw.hub_id) facts.hub_id = String(raw.hub_id); // the hub's id of the message, to claim it once it is a record
   const base = { message_id, ts: tsOf(raw, nowMs), sender: senderOf(raw), subject: oneLine(raw.subject, 300), snippet: oneLine(normText(raw.text), 300) };
   const alertDate = facts.mail_date;
 
@@ -229,6 +232,15 @@ function reviewReasonsFor(facts, settings) {
   return { reasons, chosen };
 }
 
+/** The event of a recorded payment: ids and short facts (the hub's purchases and the other apps read tx_id, amount in major units). */
+function recordedPayload(entry, facts, message_id) {
+  return {
+    tx_id: entry.id, entry_id: entry.id, merchant: facts.merchant, amount: Math.abs(entry.amount_cents) / 100, amount_cents: entry.amount_cents,
+    currency: facts.currency || "EUR", date: entry.date, message_id, kind: facts.kind === "refund" ? "refund" : "payment",
+    ...(facts.order_ref ? { order_ref: facts.order_ref } : {}), items: facts.product ? [facts.product] : [],
+  };
+}
+
 /** Create the entry for a mail and mark it recorded (insert the row, or update an existing review row). */
 async function recordNow({ base, facts, chosen, existing = false }) {
   const { message_id } = base;
@@ -250,8 +262,9 @@ async function recordNow({ base, facts, chosen, existing = false }) {
     title: `${kind === "refund" ? "Reembolso" : "Pago"} apuntado: ${facts.merchant} ${money(facts.amount_cents, facts.currency || "EUR")}`,
     body: `${facts.charge_date} · ${chosen.account.name}${category.category_id ? ` · ${entry.category_name}` : ""}`,
     dedupe_key: `recorded:${message_id}`, event: "ledger.mail.recorded",
-    payload: { entry_id: entry.id, merchant: facts.merchant, amount: entry.amount_cents, currency: facts.currency || "EUR", date: facts.charge_date, message_id },
+    payload: recordedPayload(entry, facts, message_id),
   });
+  await claimMail(facts.hub_id, txRef(entry.id));
   return entry;
 }
 
@@ -281,6 +294,7 @@ async function handleSameOrder(base, facts, prior, settings) {
   if (kind === "charge" && prior.state === "recorded") {
     await followSubscription({ facts, merchant: facts.merchant, amount_cents: facts.amount_cents, currency: facts.currency || "EUR", date: facts.charge_date });
   }
+  if (entry_id) await claimMail(facts.hub_id, txRef(entry_id));
   return { state: "duplicate", kind, message_id, entry_id, reasons: facts.reasons };
 }
 
@@ -297,6 +311,7 @@ async function recordOrReview(base, facts, settings) {
     if (match) {
       insertMail({ ...base, kind, state: "duplicate", facts: { ...facts, duplicate_of: match.id, duplicate_reason: "movimiento existente" }, entry_id: match.id });
       if (kind === "charge") await followSubscription({ facts, merchant: facts.merchant, amount_cents: facts.amount_cents, currency: facts.currency || "EUR", date: match.date || facts.charge_date });
+      await claimMail(facts.hub_id, txRef(match.id));
       return { state: "duplicate", kind, message_id, entry_id: match.id, reasons: facts.reasons };
     }
   }
@@ -390,6 +405,12 @@ export async function acceptMail(message_id, overrides = {}) {
     });
   });
   if (kind === "charge") await followSubscription({ facts: f, merchant, amount_cents, currency: f.currency || account.currency, date, account_id: account.id, category_id });
+  const accepted = { ...f, kind, merchant, currency: f.currency || account.currency };
+  await notify({
+    kind: "mail.recorded", severity: "low", title: `${kind === "refund" ? "Reembolso" : "Pago"} apuntado: ${merchant} ${money(amount_cents, accepted.currency)}`,
+    body: `${date} · ${account.name}`, dedupe_key: `recorded:${message_id}`, event: "ledger.mail.recorded", payload: recordedPayload(entry, accepted, message_id),
+  });
+  await claimMail(f.hub_id, txRef(entry.id));
   return { mail: presentMail(getMail(message_id)), entry, ...(possible ? { warning: `Existe un movimiento parecido (${possible.id}, ${possible.date}, ${money(possible.amount_cents)}). Revisa que no esté duplicado.`, similar_entry_id: possible.id } : {}) };
 }
 
@@ -577,6 +598,7 @@ export async function scanMail({ since_days = null, query = "", trigger = "manua
         }
       }
       setHistory(false);
+      storeWatermark(answer.hub_last_id);
       run.alerts += await subs.sweepAlerts(todayLocal());
       run.alerts += await flushBatch();
     }

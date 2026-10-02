@@ -483,7 +483,9 @@ test("new subscription, failed payment and cancellation alerts with severities a
   for (const t of ["ledger.mail.recorded", "ledger.subscription.new", "ledger.payment.failed"]) assert.ok(types.includes(t), t);
   const recorded = sink.events.find((e) => e.type === "ledger.mail.recorded").data;
   assert.equal(recorded.merchant, "Netflix");
-  assert.equal(recorded.amount, -1299);
+  assert.equal(recorded.amount, 12.99);
+  assert.equal(recorded.amount_cents, -1299);
+  assert.equal(recorded.tx_id, recorded.entry_id);
   assert.equal(recorded.date, "2026-10-05");
   assert.ok(recorded.entry_id);
   // the same mails scanned again alert nothing new

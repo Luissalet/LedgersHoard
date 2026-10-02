@@ -13,6 +13,7 @@ import { parseAmount, formatCents } from "./money.js";
 import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
 import { fail, monthField, amountField, resolveAccountOrFail, resolveCategoryOrFail, parseAmountOrFail, signedAmount, present, tool, RO } from "./agent-helpers.js";
 import { MAIL_TOOLS, MAIL_INSTRUCTIONS } from "./mail-tools.js";
+import { FAMILY_TOOLS, FAMILY_INSTRUCTIONS } from "./family-tools.js";
 
 const BASE_INSTRUCTIONS = `Ledger's Hoard is the user's household ledger (accounts, categories, entries, budgets, CSV imports). Amounts are integer cents in tool results; format them for the user as "12,50 €".
 Read before you write: call list_accounts and list_categories once per session before add_entry, transfer or set_budget.
@@ -25,7 +26,7 @@ Never report an account balance read before a write as the balance after it. If 
 Months are YYYY-MM, dates are YYYY-MM-DD. Default month is the current one. delete_entry is irreversible: confirm first.
 Imports: run import_csv_preview, show the mapping and the duplicate count, and only then import_csv_commit with the same csv and mapping. Duplicates are skipped by hash, so committing twice is safe.
 Forecasts: use cash_forecast for what-if questions. Saved scenarios are assumptions, never recorded entries; a recurring candidate is not automatically a confirmed future charge.`;
-export const AGENT_INSTRUCTIONS = `${BASE_INSTRUCTIONS}\n${MAIL_INSTRUCTIONS}`;
+export const AGENT_INSTRUCTIONS = `${BASE_INSTRUCTIONS}\n${MAIL_INSTRUCTIONS}\n${FAMILY_INSTRUCTIONS}`;
 
 export const TOOLS = [
   tool("list_accounts",
@@ -116,9 +117,18 @@ export const TOOLS = [
     ({ month }) => { const s = reports.summary(month || thisMonth()); return { ...s, income_text: formatCents(s.income), expense_text: formatCents(s.expense), net_text: formatCents(s.net) }; }),
 
   tool("budget_status",
-    "Budget check for a month: spent, remaining, over flag per category.\nBudget check for a month (default current): per expense category budget, spent, remaining, pct and over flag, plus a one-line verdict.\nSinónimos: presupuesto, me paso, cuánto me queda, límite de gasto, voy bien, presupuesto de comida",
-    z.object({ month: monthField }), RO,
-    ({ month }) => reports.budgetStatus(month || thisMonth())),
+    "Budget check for a month: spent, left, over flag per category. Presupuesto del mes.\nBudget check for a month (default current), optionally for one category: per expense category budget, spent, left (remaining), pct and over flag, plus a one-line verdict. Cents.\nSinónimos: presupuesto, me paso, cuánto me queda, límite de gasto, voy bien, presupuesto de comida",
+    z.object({ month: monthField, category: z.string().optional().describe("Category name or id; omit for all") }), RO,
+    ({ month, category }) => {
+      const status = reports.budgetStatus(month || thisMonth());
+      if (!category) return { ok: true, ...status };
+      const cat = resolveCategoryOrFail(category, { kind: "expense" });
+      const only = status.categories.filter((c) => c.id === cat.id);
+      const left = only.length && only[0].budget != null ? only[0].remaining : null;
+      return { ok: true, ...status, categories: only, verdict: only.length && only[0].budget != null
+        ? `${status.month}: ${cat.name} ${only[0].over ? "superado" : "dentro de presupuesto"}, gastado ${formatCents(only[0].spent)} de ${formatCents(only[0].budget)} (${left >= 0 ? "queda" : "te pasas en"} ${formatCents(Math.abs(left))}).`
+        : `${status.month}: ${cat.name} no tiene presupuesto; gastado ${formatCents(only[0]?.spent || 0)}.` };
+    }),
 
   tool("months_report",
     "Per-month income, expense and net between from and to (YYYY-MM, inclusive). Defaults to the last 12 months.\nSinónimos: informe mensual, evolución, comparar meses, cuánto gasto al mes, histórico, tendencia",
@@ -280,6 +290,7 @@ export const TOOLS = [
     }),
 
   ...MAIL_TOOLS,
+  ...FAMILY_TOOLS,
 ];
 
 export function findTool(name) {

@@ -6,7 +6,7 @@ import { bootServer, SAMPLE_CSV } from "./helpers.js";
 import { TOOLS } from "../server/agent-tools.js";
 import { thisMonth } from "../server/dates.js";
 
-const EXPECTED = ["list_accounts", "upsert_account", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "recurring_candidates", "list_scenarios", "create_scenario", "get_scenario", "add_scenario_line", "update_scenario_line", "delete_scenario_line", "cash_forecast", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer", "mail_status", "mail_scan", "mail_review", "mail_accept", "mail_ignore", "mail_undo", "mail_reset", "mail_paste", "subscriptions_list", "subscription_update", "subscriptions_upcoming", "mail_spending", "ledger_notifications"];
+const EXPECTED = ["list_accounts", "upsert_account", "list_categories", "add_entry", "list_entries", "search_entries", "summary", "budget_status", "months_report", "recurring_candidates", "list_scenarios", "create_scenario", "get_scenario", "add_scenario_line", "update_scenario_line", "delete_scenario_line", "cash_forecast", "balance", "update_entry", "delete_entry", "upsert_category", "set_budget", "import_csv_preview", "import_csv_commit", "transfer", "mail_status", "mail_scan", "mail_review", "mail_accept", "mail_ignore", "mail_undo", "mail_reset", "mail_paste", "subscriptions_list", "subscription_update", "subscriptions_upcoming", "mail_spending", "ledger_notifications", "tx_find", "tx_attach_doc", "forecast_month", "split_add", "splits_balance", "split_settle", "income_from_sales", "report_year"];
 
 let s;
 before(async () => { s = await bootServer(); });

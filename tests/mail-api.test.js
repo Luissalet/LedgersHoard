@@ -43,7 +43,7 @@ test("the new tools are in the catalogue with synonyms, short headlines and corr
   assert.equal(tools.mail_scan.annotations.openWorldHint, true);
   assert.equal(tools.mail_status.annotations.openWorldHint, true);
   assert.equal(tools.list_accounts.annotations.openWorldHint, false);
-  assert.equal(TOOLS.length, 38);
+  assert.equal(TOOLS.length, 46);
   assert.equal(tools.mail_reset.annotations.destructiveHint, true);
   assert.match(AGENT_INSTRUCTIONS, /untrusted/);
   assert.match(AGENT_INSTRUCTIONS, /never invent an amount, date or merchant/);
@@ -172,7 +172,7 @@ test("mail_status through the tool and the routes", async () => {
 
 test("settings route: defaults, validation, and the account is stored as an id", async () => {
   const defaults = (await s.call("GET", "/api/mail/settings")).body;
-  assert.deepEqual(defaults, { enabled: true, auto_record: true, account: "", interval_min: 15, first_days: 62, window_days: 14, min_confidence: 70, review_above: 500, toast: true, hub: true, quiet_history: true, faustus_dir: "", faustus_owner: "" });
+  assert.deepEqual(defaults, { enabled: true, auto_record: true, account: "", interval_min: 15, first_days: 62, window_days: 14, min_confidence: 70, review_above: 500, toast: true, hub: true, quiet_history: true, faustus_dir: "", faustus_owner: "", source: "auto" });
   const put = await s.call("PUT", "/api/mail/settings", { interval_min: 30, auto_record: false, account: "Banco", faustus_owner: "luis", toast: false });
   assert.equal(put.status, 200, JSON.stringify(put.body));
   assert.equal(put.body.interval_min, 30);

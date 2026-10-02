@@ -60,7 +60,7 @@ const SELECT = `SELECT e.*, a.name AS account_name, c.name AS category_name, c.k
   JOIN accounts a ON a.id = e.account_id
   LEFT JOIN categories c ON c.id = e.category_id`;
 
-const row = (r) => (r ? { ...r, tags: JSON.parse(r.tags || "[]") } : null);
+const row = (r) => (r ? { ...r, tags: JSON.parse(r.tags || "[]"), docs: JSON.parse(r.docs || "[]") } : null);
 
 export function getEntry(id) {
   return row(db().prepare(`${SELECT} WHERE e.id = ?`).get(id));

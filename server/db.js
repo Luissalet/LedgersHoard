@@ -149,6 +149,40 @@ const MIGRATIONS = [
   );
   CREATE INDEX notifications_ts ON notifications(ts);
   `,
+  // Family links: documents attached to a movement (references to other apps' records), shared expenses with the people
+  // who owe a share, their settlements, and the sales lines already booked as income (idempotent by batch + line).
+  `
+  ALTER TABLE entries ADD COLUMN docs TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE splits (
+    id TEXT PRIMARY KEY,
+    entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    person_key TEXT NOT NULL,
+    person_ref TEXT NOT NULL DEFAULT '',
+    person_name TEXT NOT NULL,
+    share_cents INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX splits_entry_person ON splits(entry_id, person_key);
+  CREATE INDEX splits_person ON splits(person_key);
+  CREATE TABLE settlements (
+    id TEXT PRIMARY KEY,
+    person_key TEXT NOT NULL,
+    person_ref TEXT NOT NULL DEFAULT '',
+    person_name TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    entry_id TEXT NULL REFERENCES entries(id) ON DELETE SET NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX settlements_person ON settlements(person_key);
+  CREATE TABLE sales_lines (
+    batch TEXT NOT NULL,
+    line INTEGER NOT NULL,
+    entry_id TEXT NULL REFERENCES entries(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (batch, line)
+  );
+  `,
 ];
 
 let connection = null;

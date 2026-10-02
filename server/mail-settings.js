@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { getSetting, setSetting } from "./db.js";
 import { getAccount, resolveAccount } from "./accounts.js";
+import { MAIL_SOURCES, forgetInterest } from "./mail-hub.js";
 
 export const KEYS = {
   enabled: ["mail.enabled", 1],
@@ -19,6 +20,7 @@ export const KEYS = {
   quiet_history: ["notify.quiet_history", 1],
   faustus_dir: ["mail.faustus_dir", ""],
   faustus_owner: ["mail.faustus_owner", ""],
+  source: ["mail.source", "auto"],
 };
 const FLAGS = new Set(["enabled", "auto_record", "toast", "hub", "quiet_history"]);
 
@@ -38,6 +40,7 @@ export const settingsPatch = z.object({
   quiet_history: flag,
   faustus_dir: z.string().trim().max(500),
   faustus_owner: z.string().trim().max(120),
+  source: z.enum(MAIL_SOURCES),
 }).partial().strict();
 
 /** Typed settings: flags as booleans. */
@@ -59,5 +62,6 @@ export function updateMailSettings(patch) {
     data.account = account.id;
   }
   for (const [name, value] of Object.entries(data)) setSetting(KEYS[name][0], value);
+  forgetInterest();
   return mailSettings();
 }

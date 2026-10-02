@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { getSetting } from "./db.js";
+import { createRoutedSource } from "./mail-hub.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const HELPER = path.join(HERE, "mail", "faustus_mail.py");
@@ -127,9 +128,9 @@ export function createMailSource({ runner = spawnRunner, settings = getSetting, 
 }
 
 let current = null;
-/** Process-wide source; tests replace it with setMailSource(fake). */
+/** Process-wide source (the hub's gateway or the Faustus helper, by mail.source); tests replace it with setMailSource(fake). */
 export function mailSource() {
-  if (!current) current = createMailSource();
+  if (!current) current = createRoutedSource({ own: createMailSource() });
   return current;
 }
 export function setMailSource(source) {

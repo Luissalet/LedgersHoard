@@ -1,6 +1,7 @@
 // Entry point: pick a port, open the database and serve API + UI on 127.0.0.1.
 import { createApp, resolveDataDir } from "./app.js";
 import { findAvailablePort, validPort } from "./port.js";
+import { setAppUrl } from "./family.js";
 
 const PREFERRED_PORT = validPort(process.env.LEDGER_PORT || process.env.PORT, 5180);
 const PORT = process.env.PORT_STRICT === "1" ? PREFERRED_PORT : await findAvailablePort(PREFERRED_PORT);
@@ -10,6 +11,7 @@ const { app, scheduler } = createApp({
 });
 
 const server = app.listen(PORT, "127.0.0.1", () => {
+  setAppUrl(`http://127.0.0.1:${PORT}`);
   if (PORT !== PREFERRED_PORT) console.log(`Puerto ${PREFERRED_PORT} ocupado; usando ${PORT}.`);
   console.log(`Ledger's Hoard en http://127.0.0.1:${PORT} · datos en ${dataDir}`);
 });

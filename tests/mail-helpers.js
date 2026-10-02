@@ -40,3 +40,5 @@ export function captureNotifications({ platform = "linux" } = {}) {
   });
   return { events, scripts, restore: resetNotifyBackends };
 }
+
+export { setMailSource as setMailSourceFor };

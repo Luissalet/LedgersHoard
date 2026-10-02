@@ -11,6 +11,10 @@ import { installRoutes } from "./routes.js";
 import { installMailRoutes } from "./mail-routes.js";
 import { createMailScheduler } from "./mail-scheduler.js";
 import { installAgentRoutes, writeToken } from "./agent-routes.js";
+import { installFamilyRoutes } from "./family-routes.js";
+import { agendaItems } from "./agenda.js";
+import { registerInterest } from "./mail-hub.js";
+import { PAYMENT_SUBJECT_TERMS } from "./mail-engine.js";
 import * as family from "./hoard-link.js";
 import { createGuard } from "./guard.js";
 
@@ -38,7 +42,10 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
   app.use(express.json({ limit: "10mb" }));
   installRoutes(app, { version, dataDirConfigured });
   installMailRoutes(app);
+  installFamilyRoutes(app);
   installAgentRoutes(app, { token });
+  // the family agenda (the hub's Today view and calendar), answered with this app's own token; before the catch-alls below
+  family.installAgenda(app, (from, to, sphere) => agendaItems(from, to, sphere));
   app.all(/^\/api(\/.*)?$/, (req, res) => res.status(404).json({ error: "Ruta no encontrada." }));
 
   const DIST = path.join(ROOT, "dist");
@@ -58,6 +65,9 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
   });
   // The mail scan runs in this process (first scan 30 s after start); tests leave it off.
   const scheduler = createMailScheduler();
-  if (startScheduler) scheduler.start();
+  if (startScheduler) {
+    scheduler.start();
+    registerInterest(PAYMENT_SUBJECT_TERMS, { force: true }).catch(() => {}); // tell the hub's mail gateway what Ledger reads
+  }
   return { app, token, version, scheduler };
 }

@@ -11,6 +11,7 @@ import { merchantKey, merchantMatches } from "./mail-match.js";
 import { knownMerchant, SHOP_CATS } from "./mail-merchants.js";
 import { recurringCandidates } from "./recurring.js";
 import { notify } from "./notifications.js";
+import { appLink } from "./family.js";
 
 export const PERIODS = ["monthly", "yearly", "weekly", "unknown"];
 export const STATUSES = ["active", "trial", "cancelled", "paused"];
@@ -180,7 +181,8 @@ async function priceAlert(sub, oldCents, oldCurrency, newCents, newCurrency) {
   return notify({
     kind: "subscription.price", severity: "medium", title, body: `${sub.merchant}: ${periodText[sub.period] || ""}`.trim(),
     dedupe_key: `price:${sub.merchant_key}:${newCents}:${newCurrency}`, event: "ledger.subscription.price",
-    payload: { subscription_id: sub.id, merchant: sub.merchant, from_cents: oldCents, to_cents: newCents, from_currency: oldCurrency, to_currency: newCurrency },
+    payload: { subscription_id: sub.id, merchant: sub.merchant, amount: newCents / 100, currency: newCurrency, old_amount: oldCents / 100, old_currency: oldCurrency,
+      from_cents: oldCents, to_cents: newCents, from_currency: oldCurrency, to_currency: newCurrency },
   });
 }
 
@@ -191,7 +193,7 @@ async function newAlert(sub) {
   return notify({
     kind: "subscription.new", severity: "medium", title: `Nueva suscripción detectada: ${sub.merchant}`, body: amount,
     dedupe_key: `new:${sub.merchant_key}`, event: "ledger.subscription.new",
-    payload: { subscription_id: sub.id, merchant: sub.merchant, amount_cents: sub.amount_cents, currency: sub.currency, period: sub.period },
+    payload: { subscription_id: sub.id, merchant: sub.merchant, amount: sub.amount_cents / 100, amount_cents: sub.amount_cents, currency: sub.currency, period: sub.period, url: appLink("#/suscripciones") },
   });
 }
 
@@ -296,7 +298,7 @@ export async function observeFailed({ merchant, amount_cents, currency = "EUR", 
     kind: "payment.failed", severity: "high", title: `Pago rechazado: ${name}`,
     body: amount_cents ? `${money(amount_cents, currency)}. Revisa el método de pago.` : "Revisa el método de pago.",
     dedupe_key: `failed:${message_id}`, event: "ledger.payment.failed",
-    payload: { merchant: merchant || null, amount_cents: amount_cents ?? null, currency, message_id },
+    payload: { merchant: merchant || null, amount: amount_cents == null ? null : Math.abs(amount_cents) / 100, amount_cents: amount_cents ?? null, currency, message_id },
   });
 }
 
