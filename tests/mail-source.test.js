@@ -40,7 +40,7 @@ test("finds the Faustus folder: setting, then env vars, then sibling folders; va
   const fromEnv = fakeFaustus(tmp());
   const sibling = fakeFaustus(tmp());
   const broken = tmp();
-  const make = (settings, env = {}, roots = []) => createMailSource({ settings: settingsOf(settings), env, roots, runHelper: async () => ({}), hub: NO_HUB });
+  const make = (settings, env = {}, roots = []) => createMailSource({ settings: settingsOf(settings), env, roots, discovery: { searchParents: false, commonPaths: [] }, runHelper: async () => ({}), hub: NO_HUB });
   assert.equal(make({ "mail.faustus_dir": configured }).faustusDir(), path.resolve(configured));
   assert.equal(make({}, { LEDGER_FAUSTUS_DIR: fromEnv }).faustusDir(), path.resolve(fromEnv));
   assert.equal(make({}, { FAUSTUS_DIR: fromEnv }).faustusDir(), path.resolve(fromEnv));
@@ -96,7 +96,7 @@ test("the last JSON line of stdout is the answer; garbage, timeouts and spawn er
   assert.equal((await run('{"ok": false, "error": "x"}\n{"ok": true, "n": 2}\n')).n, 2);
   assert.match((await run("Traceback...\n", 1)).error, /exit 1/);
   assert.match((await run("{not json}\n")).error, /exit 0/);
-  const missing = spawnHelperRunner({ helperPath: HELPER, setting: null, env: {}, spawnFn: fakeSpawn("") });
+  const missing = spawnHelperRunner({ helperPath: HELPER, setting: null, env: {}, discovery: { searchParents: false, commonPaths: [] }, spawnFn: fakeSpawn("") });
   assert.match((await missing("status", {})).error, /Faustus folder not found/);
   const noPython = fakeFaustus(tmp(), { python: null });
   assert.match((await spawnHelperRunner({ helperPath: HELPER, setting: noPython, env: {} })("status", {})).error, /venv/);

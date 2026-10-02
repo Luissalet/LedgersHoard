@@ -36,15 +36,15 @@ const hubApi = {
  * usual places).
  */
 export function createMailSource({ runHelper = null, settings = getSetting, write = setSetting, env = process.env, clock = Date.now,
-  roots = [], hub = hubApi, spawnFn } = {}) {
+  roots = [], discovery = {}, hub = hubApi, spawnFn } = {}) {
   let cachedStatus = null;
   const setting = (key, fallback = "") => settings(key, fallback);
   const faustusSetting = () => [setting("mail.faustus_dir"), env.LEDGER_FAUSTUS_DIR].map(clean).find(Boolean) || null;
-  const faustusDir = () => findFaustusDir(faustusSetting, { env, extra: roots });
+  const faustusDir = () => findFaustusDir(faustusSetting, { ...discovery, env, extra: roots });
   const pythonOf = (root) => faustusPython(root, null, { env });
 
   const run = runHelper || spawnHelperRunner({
-    helperPath: HELPER, setting: faustusSetting, owner: () => setting("mail.faustus_owner"), env, envDropPrefixes: ["LEDGER_"],
+    helperPath: HELPER, setting: faustusSetting, owner: () => setting("mail.faustus_owner"), env, envDropPrefixes: ["LEDGER_"], discovery,
     ...(spawnFn ? { spawnFn } : {}),
   });
 
