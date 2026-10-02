@@ -5,7 +5,8 @@ import { db, uid, now, transaction } from "./db.js";
 import { parseAmount, formatCents } from "./money.js";
 import { getEntry } from "./entries.js";
 import { callApp } from "./family.js";
-import { fold } from "./mail-merchants.js";
+import { fold } from "./hoard-commons/text.js";
+import { splitShares } from "./hoard-commons/money.js";
 
 const fail = (message, status = 400, extra = {}) => { throw Object.assign(new Error(message), { status, ...extra }); };
 const money = (cents) => formatCents(cents);
@@ -43,17 +44,41 @@ export async function resolvePerson(input) {
 
 const keyOf = (p) => p.ref || fold(p.name);
 
-function shareCents(total, entry) {
-  if (entry.amount !== undefined && entry.amount !== null && entry.amount !== "") {
-    const cents = parseAmount(entry.amount);
-    if (cents === null || cents <= 0) fail(`Importe no reconocido: "${entry.amount}".`);
-    return cents;
-  }
-  const share = Number(entry.share);
-  if (!Number.isFinite(share) || share <= 0) fail(`Parte no válida para ${entry.person}: usa una fracción (0,25), un porcentaje (25) o amount.`);
+const hasAmount = (spec) => spec.amount !== undefined && spec.amount !== null && spec.amount !== "";
+
+/** A share given as a fraction (0,25) or a percentage (25) of the expense, as a number between 0 and 1. */
+function fractionOf(spec, person) {
+  const share = Number(spec.share);
+  if (!Number.isFinite(share) || share <= 0) fail(`Parte no válida para ${person}: usa una fracción (0,25), un porcentaje (25) o amount.`);
   const fraction = share <= 1 ? share : share / 100;
-  if (fraction > 1) fail(`Parte no válida para ${entry.person}: más del 100 %.`);
-  return Math.round(total * fraction);
+  if (fraction > 1) fail(`Parte no válida para ${person}: más del 100 %.`);
+  return fraction;
+}
+
+/**
+ * What each person owes: exact amounts as given, fractions of the expense shared out by largest remainder together with what stays
+ * with the user, so the parts always add up to the expense (rounding each fraction on its own could add up to more than the total).
+ */
+function allocate(total, people) {
+  const shares = new Array(people.length).fill(0);
+  let fixed = 0;
+  const fractions = [];
+  people.forEach((p, i) => {
+    if (hasAmount(p.spec)) {
+      const cents = parseAmount(p.spec.amount);
+      if (cents === null || cents <= 0) fail(`Importe no reconocido: "${p.spec.amount}".`);
+      shares[i] = cents;
+      fixed += cents;
+    } else fractions.push({ i, fraction: fractionOf(p.spec, p.who.name) });
+  });
+  if (fractions.length) {
+    const wanted = fractions.reduce((sum, f) => sum + f.fraction * total, 0);
+    if (fixed + Math.round(wanted) > total) fail(`Reparto de ${money(fixed + Math.round(wanted))} para un gasto de ${money(total)}.`);
+    const mine = Math.max(0, total - fixed - wanted);
+    const parts = splitShares(total - fixed, [...fractions.map((f) => f.fraction * total), mine > 1e-6 ? mine : 0]);
+    fractions.forEach((f, k) => { shares[f.i] = parts[k]; });
+  }
+  return shares;
 }
 
 /** Split an expense among people. Idempotent per movement and person: repeating it updates their share. */
@@ -71,11 +96,11 @@ export async function addSplit({ tx_id, participants }) {
     if (seen.has(key)) fail(`${p.who.name} aparece dos veces.`);
     seen.add(key);
   }
-  const given = people.filter((p) => (p.spec.amount !== undefined && p.spec.amount !== null && p.spec.amount !== "") || p.spec.share !== undefined);
+  const given = people.filter((p) => hasAmount(p.spec) || p.spec.share !== undefined);
   if (given.length && given.length !== people.length) fail("Indica la parte (share o amount) de todas las personas, o de ninguna para repartir a partes iguales.");
   const equal = !given.length;
   const each = equal ? Math.floor(total / (people.length + 1)) : 0;
-  const shares = people.map((p) => (equal ? each : shareCents(total, { ...p.spec, person: p.who.name })));
+  const shares = equal ? people.map(() => each) : allocate(total, people);
   const sum = shares.reduce((a, b) => a + b, 0);
   if (sum > total) fail(`Reparto de ${money(sum)} para un gasto de ${money(total)}.`);
   transaction(() => {
