@@ -1,10 +1,10 @@
 // Runs the API server (node --watch) and the Vite dev server together on
 // coordinated ports, so the /api proxy always points at the right place.
 import { spawn } from "node:child_process";
-import { findAvailablePort, validPort } from "../server/port.js";
+import { findAvailablePort, validPort } from "../server/hoard-commons/server.js";
 
-const apiPort = await findAvailablePort(validPort(process.env.LEDGER_PORT || process.env.PORT, 5180));
-const vitePort = await findAvailablePort(validPort(process.env.VITE_PORT, 5173));
+const apiPort = await findAvailablePort(validPort(process.env.LEDGER_PORT || process.env.PORT, 5180), { span: 100 });
+const vitePort = await findAvailablePort(validPort(process.env.VITE_PORT, 5173), { span: 100 });
 const env = {
   ...process.env,
   PORT: String(apiPort),

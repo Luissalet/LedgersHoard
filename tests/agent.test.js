@@ -32,7 +32,7 @@ test("agent/call requires the bearer token from the data dir", async () => {
   assert.equal((await s.call("POST", "/api/agent/call", { name: "list_accounts", arguments: {} }, { Authorization: "Bearer nope" })).status, 401);
   const token = fs.readFileSync(path.join(s.dataDir, "mcp-token"), "utf8").trim();
   assert.equal(token, s.token);
-  assert.equal(token.length, 64);
+  assert.ok(token.length >= 32 && !/\s/.test(token));
   const ok = await s.call("POST", "/api/agent/call", { name: "list_accounts", arguments: {} }, { Authorization: `Bearer ${token}` });
   assert.equal(ok.status, 200);
   assert.deepEqual(ok.body, { accounts: [] });

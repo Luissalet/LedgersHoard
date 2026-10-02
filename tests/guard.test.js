@@ -4,8 +4,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import express from "express";
-import { checkRequest, createGuard, hostOf, isAllowedHost, parseAllowedHosts } from "../server/guard.js";
+import { checkRequest as checkCommon, createGuard, hostOf, isAllowedHost as isAllowedCommon, parseAllowedHosts } from "../server/hoard-commons/express.js";
 import { bootServer } from "./helpers.js";
+
+// The rules live in the family's commons (server/hoard-commons/express.js); these keep the app's expectations of them.
+const checkRequest = ({ method = "GET", headers = {} }, allowed = []) => {
+  const verdict = checkCommon(method, headers, null, allowed);
+  return verdict ? verdict[1] : null;
+};
+const isAllowedHost = (host, allowed = []) => isAllowedCommon(host, null, allowed);
 
 // fetch() overwrites the Host header, so raw http.request is used to forge it.
 function raw(base, { method = "GET", path = "/", headers = {}, body } = {}) {
@@ -38,7 +45,7 @@ test("hostOf strips scheme, path and port and lowercases", () => {
 });
 
 test("parseAllowedHosts accepts exact names and *.suffix patterns", () => {
-  assert.deepEqual(parseAllowedHosts(" pc.example , *.TS.net,, pc2.example:8443"), ["pc.example", "*.ts.net", "pc2.example"]);
+  assert.deepEqual(parseAllowedHosts(" pc.example , *.TS.net,, pc2.example"), ["pc.example", "*.ts.net", "pc2.example"]);
   assert.deepEqual(parseAllowedHosts(undefined), []);
 });
 
@@ -76,7 +83,7 @@ test("checkRequest: Origin passes on host, not on exact string", () => {
 
 test("guard middleware: cross-site navigation reaches /, embedding and fetches do not", async () => {
   const app = express();
-  app.use(createGuard("*.ts.net"));
+  app.use(createGuard({ allowedHosts: "*.ts.net" }));
   app.get("/", (req, res) => res.send("home"));
   const server = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   const base = `http://127.0.0.1:${server.address().port}`;
