@@ -1,4 +1,4 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, SAMPLE_CSV } from "./helpers.js";
 import { MAIL } from "./mail-fixtures.js";
@@ -494,8 +494,13 @@ test("new subscription, failed payment and cancellation alerts with severities a
   assert.equal(listNotifications({ limit: 200 }).length, count);
 });
 
-test("trial ending in 3 days or less alerts once (high); yearly charge in 7 days alerts once (medium)", async () => {
+test("trial ending in 3 days or less alerts once (high); yearly charge in 7 days alerts once (medium)", async (t) => {
+  // Every mail scan also sweeps the alerts for the real day, so the scan must not run inside an alert window of the
+  // fixtures (the trial ends on 2026-10-18, the yearly charge is on 2026-10-12): pin the clock before both.
+  mock.timers.enable({ apis: ["Date"], now: new Date("2026-10-01T12:00:00") });
+  t.after(() => mock.timers.reset());
   await scan([msg("trial"), msg("renewal")]);
+  mock.timers.reset();
   const trial = subs.listSubscriptions().find((x) => x.merchant === "Notion");
   assert.equal(trial.status, "trial");
   assert.equal(trial.trial_end_date, "2026-10-18");
