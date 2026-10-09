@@ -43,7 +43,7 @@ test("the new tools are in the catalogue with synonyms, short headlines and corr
   assert.equal(tools.mail_scan.annotations.openWorldHint, true);
   assert.equal(tools.mail_status.annotations.openWorldHint, true);
   assert.equal(tools.list_accounts.annotations.openWorldHint, false);
-  assert.equal(TOOLS.length, 46);
+  assert.equal(TOOLS.length, 47);
   assert.equal(tools.mail_reset.annotations.destructiveHint, true);
   assert.match(AGENT_INSTRUCTIONS, /untrusted/);
   assert.match(AGENT_INSTRUCTIONS, /never invent an amount, date or merchant/);

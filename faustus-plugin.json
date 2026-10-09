@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "ledger",
   "name": "Ledger's Hoard",
-  "purpose": "Household money ledger: accounts, categorised entries, monthly budgets, reports, bank CSV imports, and payments and subscriptions read from the mail account connected to Faustus, shared expenses split among people, a month-end balance forecast, income booked from sales, documents of other apps attached to movements, and a place on the family agenda (subscription renewals, trial ends, expected charges, money owed), all stored locally.",
+  "purpose": "Household money ledger: accounts, categorised entries, monthly budgets, reports, bank CSV imports, and payments and subscriptions read from the mail account connected to Faustus, shared expenses split among people, a month-end balance forecast, charges that break a merchant's usual pattern, income booked from sales, documents of other apps attached to movements, and a place on the family agenda (subscription renewals, trial ends, expected charges, money owed), all stored locally.",
   "capabilities": [
     "accounts",
     "entries",
@@ -25,7 +25,8 @@
     "forecast",
     "shared-expenses",
     "income-from-sales",
-    "year-report"
+    "year-report",
+    "spending-anomalies"
   ],
   "placeholders": [
     "LEDGER_DIR",

@@ -51,6 +51,7 @@ export const api = {
   summary: (month) => request("GET", `/api/summary${qs({ month })}`),
   months: (from, to) => request("GET", `/api/reports/months${qs({ from, to })}`),
   recurring: (to, months = 18) => request("GET", `/api/reports/recurring${qs({ to, months })}`),
+  anomalies: (to, months = 12, recent_days = 45) => request("GET", `/api/reports/anomalies${qs({ to, months, recent_days })}`),
   forecast: (scenario_id, from, months = 6) => request("GET", `/api/forecast${qs({ scenario_id, from, months })}`),
   scenarios: {
     list: () => request("GET", "/api/scenarios"),

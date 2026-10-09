@@ -45,7 +45,7 @@ Once opened through the tunnel, the browser offers to install it (PWA).
 - **Cuentas** — cash, bank, card, savings or other; currency per account; opening balance; archive instead of delete when there are entries.
 - **Categorías** — expense and income categories with optional parent, colour and a monthly budget editable in place. A Spanish default set (Comida, Casa, Transporte, Ocio, Salud, Suscripciones, Ropa, Regalos, Otros gastos; Nómina, Otros ingresos) is seeded the first time the table is empty.
 - **Importar** — paste or choose a bank CSV. Delimiter (`;`, `,`, tab), header row, dates (`DD/MM/YYYY`, `YYYY-MM-DD`, `DD-MM-YYYY`), Spanish decimal comma and separate debit/credit columns are detected; the mapping can be corrected with selects; the preview shows the first 20 rows and how many are duplicates; commit reports added / skipped.
-- **Informes** — 12-month income vs expense bars and expense-by-category donut, both inline SVG with a table view.
+- **Informes** — 12-month income vs expense bars and expense-by-category donut, both inline SVG with a table view; **Cargos fuera de lo normal** lists recent charges that break their merchant's own pattern (a repeat of the same amount within 3 days, a spike against the merchant's median, an extra charge from a once-a-month merchant, a large first charge), each with its reason and the entries behind it (`anomalies.js`, read-only).
 - **Previsión** — save named what-if scenarios with one-time, monthly or quarterly income/expense assumptions, edit them, and compare recorded vs projected balances for 3–24 months. Observed recurring candidates can fill the assumption form for review. Transfers are already reflected in recorded balances; scenario lines never create entries. Different currencies are shown per account rather than added together.
 - **Correo** — reads the mail account connected to Faustus, finds payments (receipts, «has pagado», card notices, bills with «importe a cargar», shop orders with a total, refunds) and records them as expenses on the charge date. Status card (mail source auto / hub / Faustus and where it reads from, account read, last and next scan, last error, «Leer ahora», on/off, auto-record, account for mail charges, interval, review limit in euros, toast and family-bus switches), «Apuntado desde el correo» with Deshacer, «Por revisar» with Aceptar (merchant, amount, date, account and category editable) and Ignorar, duplicates seen, recent notifications, and a box to paste a receipt that is not in the inbox.
 - **Suscripciones** — subscriptions found in mail (known services, subscription words) or in repeated charges (`recurring.js`; never shops or food), with monthly and yearly cost per currency, price history, next charge, trial end, Cancelada / Pausada / Editar, upcoming charges in 30 days and the alerts raised.
@@ -71,6 +71,7 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 | `GET /api/budget?month=` | Budget status with a one-line verdict. |
 | `GET /api/reports/months?from=&to=` | Per-month income / expense / net (defaults to the last 12 months). |
 | `GET /api/reports/recurring?to=YYYY-MM&months=18` | Read-only monthly/quarterly payment candidates with dated charges and observed amount changes. |
+| `GET /api/reports/anomalies?to=YYYY-MM&months=12&recent_days=45` | Read-only charges of the last `recent_days` that break their merchant's pattern: `duplicate`, `amount_spike`, `extra_charge`, `new_merchant_large`, with severity, reason and evidence. |
 | `GET/POST /api/scenarios`, `GET/PATCH/DELETE /api/scenarios/:id` | List, create, read, rename and delete saved scenarios. |
 | `POST/PATCH/DELETE /api/scenarios/:id/lines[/:lineId]` | Add, edit and remove signed one-time or monthly assumptions. |
 | `GET /api/forecast?scenario_id=&from=YYYY-MM&months=6` | Recorded and projected monthly balances by account, with the scenario lines that contributed. |
@@ -137,6 +138,7 @@ Tools (46):
 | `budget_status` | Budget vs spent per category (optionally one `category` and a `month`) with `over`, `left`, `ok` and a human verdict. |
 | `months_report` | Per-month income / expense / net between two months. |
 | `recurring_candidates` | Likely recurring expenses, typical/latest amounts and evidence; separates stable price changes from variable bills. It does not prove a subscription or tariff change. |
+| `spending_anomalies` | Recent charges that break their merchant's own pattern (double charge, spike, extra monthly charge, large first charge), with reason, severity and evidence ids; optional `account`. Signals to review, never proof of fraud. |
 | `list_scenarios`, `get_scenario`, `create_scenario` | Browse and create saved what-if scenarios. |
 | `add_scenario_line`, `update_scenario_line`, `delete_scenario_line` | Add or correct future assumptions without altering real entries. |
 | `cash_forecast` | Compare recorded balances with a scenario for 1–24 months. |

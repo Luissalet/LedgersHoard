@@ -7,6 +7,7 @@ import * as entries from "./entries.js";
 import * as reports from "./reports.js";
 import * as forecast from "./forecast.js";
 import { recurringCandidates } from "./recurring.js";
+import { spendingAnomalies } from "./anomalies.js";
 import { previewImport, commitImport, listImports } from "./imports.js";
 import { parseAmount } from "./money.js";
 import { thisMonth, isMonth, addMonths } from "./dates.js";
@@ -111,6 +112,12 @@ export function installRoutes(app, { version, dataDirConfigured }) {
     const to = monthQuery.parse(req.query.to) || thisMonth();
     const months = req.query.months === undefined ? 18 : Number(req.query.months);
     res.json(recurringCandidates({ to, months }));
+  });
+  app.get("/api/reports/anomalies", (req, res) => {
+    const to = monthQuery.parse(req.query.to) || thisMonth();
+    const months = req.query.months === undefined ? 12 : Number(req.query.months);
+    const recent_days = req.query.recent_days === undefined ? 45 : Number(req.query.recent_days);
+    res.json(spendingAnomalies({ to, months, recent_days, account_id: req.query.account_id || null }));
   });
 
   // Editable what-if scenarios; projections leave recorded entries untouched.

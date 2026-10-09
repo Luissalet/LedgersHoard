@@ -7,6 +7,7 @@ import * as categories from "./categories.js";
 import * as entries from "./entries.js";
 import * as reports from "./reports.js";
 import { recurringCandidates } from "./recurring.js";
+import { spendingAnomalies } from "./anomalies.js";
 import * as forecasts from "./forecast.js";
 import { previewImport, commitImport, mappingSchema } from "./imports.js";
 import { parseAmount, formatCents } from "./money.js";
@@ -25,7 +26,8 @@ After add_entry, update_entry or transfer, report the stored entry back verbatim
 Never report an account balance read before a write as the balance after it. If the write reply was lost or the user asks for the latest balance, call balance after the write and use that result.
 Months are YYYY-MM, dates are YYYY-MM-DD. Default month is the current one. delete_entry is irreversible: confirm first.
 Imports: run import_csv_preview, show the mapping and the duplicate count, and only then import_csv_commit with the same csv and mapping. Duplicates are skipped by hash, so committing twice is safe.
-Forecasts: use cash_forecast for what-if questions. Saved scenarios are assumptions, never recorded entries; a recurring candidate is not automatically a confirmed future charge.`;
+Forecasts: use cash_forecast for what-if questions. Saved scenarios are assumptions, never recorded entries; a recurring candidate is not automatically a confirmed future charge.
+Anomalies: spending_anomalies answers "did they charge me twice?" or "anything odd this month?"; report each finding with its date, amount and the merchant's usual amount, and never call it fraud or an error.`;
 export const AGENT_INSTRUCTIONS = `${BASE_INSTRUCTIONS}\n${MAIL_INSTRUCTIONS}\n${FAMILY_INSTRUCTIONS}`;
 
 export const TOOLS = [
@@ -144,6 +146,12 @@ export const TOOLS = [
     "Find likely recurring payments and observed amount changes.\nRead-only monthly/quarterly candidates with dated evidence and baseline_occurrences. price_change means charged amount changed, not proof of a tariff or subscription; a variable bill's cause is unknown. Report those limits and cite exact dates/amounts. Defaults to the last 18 months.\nSinónimos: pagos recurrentes, suscripciones, recibos periódicos, cuotas, qué ha subido de precio, gastos fijos, renovaciones",
     z.object({ to: monthField, months: z.number().int().min(3).max(60).default(18) }), RO,
     (a) => recurringCandidates(a)),
+
+  tool("spending_anomalies",
+    "Flag recent charges that break their merchant's own pattern.\nRead-only. For the last recent_days (default 45) up to the end of month `to`, compares each expense with the earlier charges of the same counterparty in the same account over `months` (default 12). kind: duplicate (same amount again within 3 days), amount_spike (≥1.8× the merchant's median and ≥10 € above it, needs 3 earlier charges), extra_charge (a once-a-month merchant charged twice in a month), new_merchant_large (first charge in the window, ≥150 € and ≥4× the median expense). Each item has reason, severity and evidence entry ids. These are signals to review, not proof of fraud or a billing error: cite dates and amounts and never assert a cause.\nSinónimos: cargos raros, cobros duplicados, cobro doble, me han cobrado dos veces, gasto anormal, algo fuera de lo normal, anomalías, cargo sospechoso, revisar cargos",
+    z.object({ to: monthField, months: z.number().int().min(3).max(36).default(12),
+      recent_days: z.number().int().min(1).max(365).default(45), account: z.string().optional() }), RO,
+    ({ account, ...a }) => spendingAnomalies({ ...a, account_id: account ? resolveAccountOrFail(account).id : null })),
 
   tool("list_scenarios",
     "List saved cash-flow what-if scenarios and their assumptions.\nSinónimos: escenarios, simulaciones guardadas, planes futuros",
