@@ -12,3 +12,13 @@ test("first line of every tool description fits the tool index", () => {
     assert.match(t.description, /\nSinónimos: /, `${t.name} keeps its Sinónimos line`);
   }
 });
+
+test("no tool description exceeds 750 characters and trimmed tools keep their inputs", () => {
+  for (const t of TOOLS) assert.ok(t.description.length <= 750, `${t.name}: ${t.description.length} chars`);
+  const expected = { spending_anomalies: ["account", "months", "recent_days", "to"] };
+  for (const [name, props] of Object.entries(expected)) {
+    const tool = TOOLS.find((x) => x.name === name);
+    assert.ok(tool, name);
+    assert.deepEqual(Object.keys(tool.schema.shape).sort(), props.slice().sort(), name);
+  }
+});

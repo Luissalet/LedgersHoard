@@ -66,13 +66,13 @@ export const TOOLS = [
     ({ kind, include_archived }) => ({ categories: categories.listCategories({ includeArchived: include_archived }).filter((c) => !kind || c.kind === kind) })),
 
   tool("add_entry",
-    'Record a money movement: amount as text, account and category by name.\nRecord a money movement. amount is text parsed as the user wrote it ("12,50", "1.234,56", "-3"). kind: expense (stored negative), income (positive) or auto (sign from the text; a positive amount with an income category is income, otherwise expense). account by name or id, fuzzy (accent-insensitive, unique prefix); omit it when there is only one account and it is used automatically. If there are no accounts the error says to call upsert_account first. category by name (fuzzy; created only if create_category is true). Returns the stored entry with the resolved account and category; repeat it to the user verbatim.\nSinónimos: apuntar, anotar, gasto, ingreso, he pagado, he gastado, me han pagado, nómina, compra, registrar movimiento, añadir gasto',
+    "Record a money movement: amount as text, account and category by name.\nRecord a money movement. If there are no accounts the error says to call upsert_account first. Returns the stored entry with the resolved account and category; repeat it to the user verbatim.\nSinónimos: apuntar, anotar, gasto, ingreso, he pagado, he gastado, me han pagado, nómina, compra, registrar movimiento, añadir gasto",
     z.object({
-      amount: amountField,
-      kind: z.enum(["expense", "income", "auto"]).default("auto"),
+      amount: amountField.describe("Text parsed as the user wrote it (\"12,50\", \"1.234,56\", \"-3\")"),
+      kind: z.enum(["expense", "income", "auto"]).default("auto").describe("expense (stored negative), income (positive) or auto (sign from the text; a positive amount with an income category is income, otherwise expense)"),
       date: z.string().optional().describe("YYYY-MM-DD or DD/MM/YYYY; default today"),
-      account: z.string().optional().describe("Account name or id. Required whenever the user names an account; copy their choice here. Omit only if they did not name one and there is exactly one account."),
-      category: z.string().optional().describe("Category name (fuzzy) or id"),
+      account: z.string().optional().describe("Account name or id, fuzzy (accent-insensitive, unique prefix). Required whenever the user names an account; copy their choice here. Omit only if they did not name one and there is exactly one account."),
+      category: z.string().optional().describe("Category name (fuzzy) or id; a new one is created only if create_category is true"),
       create_category: z.boolean().default(false),
       counterparty: z.string().max(200).default("").describe("Shop, person or payer"),
       note: z.string().max(2000).default(""),
@@ -148,9 +148,9 @@ export const TOOLS = [
     (a) => recurringCandidates(a)),
 
   tool("spending_anomalies",
-    "Flag recent charges that break their merchant's own pattern.\nRead-only. For the last recent_days (default 45) up to the end of month `to`, compares each expense with the earlier charges of the same counterparty in the same account over `months` (default 12). kind: duplicate (same amount again within 3 days), amount_spike (≥1.8× the merchant's median and ≥10 € above it, needs 3 earlier charges), extra_charge (a once-a-month merchant charged twice in a month), new_merchant_large (first charge in the window, ≥150 € and ≥4× the median expense). Each item has reason, severity and evidence entry ids. These are signals to review, not proof of fraud or a billing error: cite dates and amounts and never assert a cause.\nSinónimos: cargos raros, cobros duplicados, cobro doble, me han cobrado dos veces, gasto anormal, algo fuera de lo normal, anomalías, cargo sospechoso, revisar cargos",
-    z.object({ to: monthField, months: z.number().int().min(3).max(36).default(12),
-      recent_days: z.number().int().min(1).max(365).default(45), account: z.string().optional() }), RO,
+    "Flag recent charges that break their merchant's own pattern.\nRead-only. Compares recent expenses with earlier charges of the same counterparty in the same account and returns items with kind (duplicate, amount_spike, extra_charge, new_merchant_large), reason, severity and evidence entry ids. Signals to review, not proof of fraud or a billing error: cite dates and amounts, never assert a cause.\nSinónimos: cargos raros, cobros duplicados, cobro doble, me han cobrado dos veces, gasto anormal, algo fuera de lo normal, anomalías, cargo sospechoso, revisar cargos",
+    z.object({ to: monthField.describe("Last month (YYYY-MM) of the window: recent_days are counted back from the end of this month; default the current month"), months: z.number().int().min(3).max(36).default(12).describe("Months of earlier history compared against (default 12)"),
+      recent_days: z.number().int().min(1).max(365).default(45).describe("Only charges in the last N days (default 45) are checked. kind rules: duplicate = same amount again within 3 days; amount_spike = ≥1.8× the merchant's median and ≥10 € above it, needs 3 earlier charges; extra_charge = a once-a-month merchant charged twice in a month; new_merchant_large = first charge in the window, ≥150 € and ≥4× the median expense"), account: z.string().optional().describe("Limit to one account (id or name)") }), RO,
     ({ account, ...a }) => spendingAnomalies({ ...a, account_id: account ? resolveAccountOrFail(account).id : null })),
 
   tool("list_scenarios",
