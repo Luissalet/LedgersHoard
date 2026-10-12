@@ -1,19 +1,36 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Empty, Field, useAction, ConfirmDialog } from "../components/ui.jsx";
 import { formatCents, centsToText, parseAmount, ACCOUNT_TYPES } from "../format.js";
+import { changedFields, rebaseForm } from "../copilot-context.js";
+import { useCopilotContext } from "../copilot-hooks.js";
 
 const blank = { name: "", type: "bank", currency: "EUR", opening_balance: "0" };
 
-function AccountForm({ initial, onSubmit, onCancel, busy, submitLabel }) {
+// `id` set = editing that account: only the fields the user changed are sent, so a concurrent change by the assistant survives.
+function AccountForm({ id = null, initial, onSubmit, onCancel, busy, submitLabel }) {
   const [form, setForm] = useState(initial);
+  const [base, setBase] = useState(initial);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const initialKey = JSON.stringify(initial);
+  useEffect(() => {
+    if (!id || JSON.stringify(initial) === JSON.stringify(base)) return;
+    setForm((f) => rebaseForm(base, initial, f));
+    setBase(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialKey]);
+  const changed = changedFields(base, form);
+  useCopilotContext(() => ({ editors: [{ kind: id ? "account-form" : "account-new", object_id: id, dirty: id ? Object.keys(changed).length > 0 : Object.keys(changedFields(blank, form)).length > 0, fields: form }] }));
   const submit = (e) => {
     e.preventDefault();
     const opening_balance = form.opening_balance.trim() ? parseAmount(form.opening_balance) : 0;
     if (opening_balance === null) return;
-    onSubmit({ name: form.name, type: form.type, currency: form.currency.toUpperCase(), opening_balance });
+    const data = { name: form.name, type: form.type, currency: form.currency.toUpperCase(), opening_balance };
+    if (!id) return onSubmit(data);
+    const keys = Object.keys(changed);
+    if (!keys.length) return onSubmit({});
+    onSubmit(Object.fromEntries(keys.map((k) => [k, data[k]])));
   };
   return (
     <form onSubmit={submit} className="panel grid gap-3 sm:grid-cols-[2fr_1fr_90px_1fr_auto] sm:items-end">
@@ -62,7 +79,7 @@ export default function Cuentas() {
   const row = (a) => (
     <li key={a.id} className="py-3">
       {editing === a.id ? (
-        <AccountForm initial={{ name: a.name, type: a.type, currency: a.currency, opening_balance: centsToText(a.opening_balance) }} onSubmit={(d) => update(a.id, d)} onCancel={() => setEditing(null)} busy={busy} submitLabel="Guardar" />
+        <AccountForm id={a.id} initial={{ name: a.name, type: a.type, currency: a.currency, opening_balance: centsToText(a.opening_balance) }} onSubmit={(d) => update(a.id, d)} onCancel={() => setEditing(null)} busy={busy} submitLabel="Guardar" />
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>

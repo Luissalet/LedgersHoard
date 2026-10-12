@@ -3,9 +3,11 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Empty, Field, useAction } from "../components/ui.jsx";
 import { formatCents, dateLabel } from "../format.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 function SettleForm({ row, symbol, run, busy, onDone }) {
   const [amount, setAmount] = useState("");
+  useCopilotContext(() => ({ editors: [{ kind: "settle-form", object_id: row.person_ref || row.person, dirty: amount.trim() !== "", fields: { person: row.person, amount } }] }));
   const submit = async (e) => {
     e.preventDefault();
     const out = await run(() => api.splits.settle({ person: row.person_ref || row.person, amount: amount.trim() }), "Pago apuntado.");
@@ -33,6 +35,8 @@ export default function Compartidos() {
     try { setData(await api.splits.balance()); } catch (e) { notify({ kind: "error", text: e.message }); }
   }, [notify]);
   useEffect(() => { load(); }, [load]);
+  useCopilotRefresh(() => { load(); });
+  useCopilotContext(() => ({ view: { person: open } }));
 
   const rows = data?.balances || [];
   const label = (r) => (r.direction === "owes_me" ? "te debe" : r.direction === "i_owe" ? "le debes" : "al día");

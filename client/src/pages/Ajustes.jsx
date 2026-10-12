@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Field, ConfirmDialog, useAction } from "../components/ui.jsx";
+import { changedFields } from "../copilot-context.js";
+import { useCopilotContext } from "../copilot-hooks.js";
 
 function MailSettings({ notify }) {
   const [form, setForm] = useState(null);
@@ -12,11 +14,13 @@ function MailSettings({ notify }) {
   useEffect(() => {
     api.mail.settings().then((s) => { const f = { faustus_dir: s.faustus_dir || "", faustus_owner: s.faustus_owner || "" }; setForm(f); setSaved(f); }).catch(() => setForm(null));
   }, []);
+  useCopilotContext(() => ({ editors: form && saved ? [{ kind: "mail-settings-form", object_id: null, dirty: Object.keys(changedFields(saved, form)).length > 0, fields: form }] : [] }));
   if (!form) return null;
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const save = async () => {
-    if (form.faustus_dir === saved.faustus_dir && form.faustus_owner === saved.faustus_owner) return;
-    const out = await run(() => api.mail.saveSettings(form), "Ajustes del correo guardados.");
+    const changed = changedFields(saved, form);   // only what the user changed, so a concurrent change of the other field survives
+    if (!Object.keys(changed).length) return;
+    const out = await run(() => api.mail.saveSettings(changed), "Ajustes del correo guardados.");
     if (out) setSaved(form);
   };
   return (
@@ -56,6 +60,7 @@ export default function Ajustes() {
   const { settings, dataDir, version, refresh, notify } = useApp();
   const [symbol, setSymbol] = useState(settings?.currency_symbol || "€");
   const [run, busy] = useAction(notify);
+  useCopilotContext(() => ({ editors: [{ kind: "currency-form", object_id: null, dirty: settings?.currency_symbol != null && symbol.trim() !== settings.currency_symbol, fields: { currency_symbol: symbol } }] }));
   const save = async () => {
     const out = await run(() => api.settings({ currency_symbol: symbol.trim() || "€" }), "Ajustes guardados.");
     if (out) refresh();

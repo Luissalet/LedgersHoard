@@ -5,6 +5,7 @@ import { Page, Section, Empty, ConfirmDialog, useAction, Field } from "../compon
 import { EntryRow, EntryFields, EntryForm, emptyDraft } from "../components/EntryRow.jsx";
 import SplitDialog from "../components/SplitDialog.jsx";
 import { formatCents, today, thisMonth } from "../format.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 function TransferForm({ accounts, onDone, run, busy }) {
   const [form, setForm] = useState({ from: "", to: "", amount: "", date: today(), note: "" });
@@ -77,10 +78,18 @@ export default function Movimientos() {
   }, []);
 
   const setF = (k) => (e) => setFilter((f) => ({ ...f, [k]: e.target.value }));
-
-  const toPayload = (d) => ({
-    date: d.date, amount: d.amount, account_id: d.account_id, category_id: d.category_id || null, counterparty: d.counterparty, note: d.note,
+  useCopilotRefresh(() => { load(); });
+  useCopilotContext(() => {
+    const filters = Object.fromEntries(Object.entries(filter).filter(([, v]) => v));
+    const typed = !!(draft.amount.trim() || draft.counterparty.trim() || draft.note.trim());
+    return {
+      view: { filters, ...(tx ? { tx } : {}) },
+      editors: typed ? [{ kind: "entry-new", object_id: null, dirty: true, fields: draft }] : [],
+    };
   });
+
+  // Works for a whole draft (new entry) and for the changed fields only (edit): an agent's concurrent change to another field survives.
+  const toPayload = (d) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, k === "category_id" ? (v || null) : v]));
 
   const add = async () => {
     if (!draft.amount.trim()) return notify({ kind: "error", text: "Escribe un importe (negativo = gasto)." });

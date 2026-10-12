@@ -1,12 +1,14 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Field, useAction, ConfirmDialog } from "../components/ui.jsx";
 import { formatCents, centsToText, parseAmount, KINDS } from "../format.js";
+import { useCopilotContext } from "../copilot-hooks.js";
 
 /** Budget cell: click to edit, blur/Enter saves immediately, Escape cancels. */
 function BudgetCell({ category, onSave, symbol }) {
   const [text, setText] = useState(null);
+  useCopilotContext(() => ({ editors: text === null ? [] : [{ kind: "category-budget", object_id: category.id, dirty: text !== (category.monthly_budget == null ? "" : centsToText(category.monthly_budget)), fields: { monthly_budget: text } }] }));
   if (category.kind !== "expense") return <span className="help">—</span>;
   if (text === null) {
     return (
@@ -36,9 +38,10 @@ function BudgetCell({ category, onSave, symbol }) {
   );
 }
 
-function NewCategoryForm({ categories, onCreate, busy }) {
+function NewCategoryForm({ categories, onCreate, onDraft, busy }) {
   const [form, setForm] = useState({ name: "", kind: "expense", parent_id: "", monthly_budget: "", color: "#8a5a19" });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  useEffect(() => { onDraft(form.name.trim() || form.monthly_budget.trim() ? form : null); }, [form]);   // eslint-disable-line react-hooks/exhaustive-deps
   const submit = async (e) => {
     e.preventDefault();
     const budget = form.monthly_budget.trim() ? Math.abs(parseAmount(form.monthly_budget) ?? NaN) : null;
@@ -70,6 +73,14 @@ export default function Categorias() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [renaming, setRenaming] = useState(null);
   const [name, setName] = useState("");
+  const [creating, setCreating] = useState(null);   // the new-category form reports its draft here
+  useCopilotContext(() => {
+    const renamed = categories.find((c) => c.id === renaming);
+    return { editors: [
+      ...(renamed ? [{ kind: "category-name", object_id: renamed.id, dirty: name.trim() !== renamed.name, fields: { name } }] : []),
+      ...(creating ? [{ kind: "category-new", object_id: null, dirty: true, fields: creating }] : []),
+    ] };
+  });
 
   const update = async (id, patch, okText = "Categoría actualizada.") => {
     const out = await run(() => api.categories.update(id, patch), okText);
@@ -127,7 +138,7 @@ export default function Categorias() {
 
   return (
     <Page title="Categorías" description="Pulsa un nombre para renombrarlo y un presupuesto para cambiarlo; se guarda al salir del campo. Solo las categorías de gasto tienen presupuesto.">
-      <div className="mb-4"><NewCategoryForm categories={categories} onCreate={create} busy={busy} /></div>
+      <div className="mb-4"><NewCategoryForm categories={categories} onCreate={create} onDraft={setCreating} busy={busy} /></div>
       <div className="grid gap-4 lg:grid-cols-2">
         <Section title="Gastos">{table("expense")}</Section>
         <Section title="Ingresos">{table("income")}</Section>

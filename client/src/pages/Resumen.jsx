@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, MonthPicker, Empty } from "../components/ui.jsx";
 import { formatCents, dateLabel, monthLabel, monthEnd, thisMonth, ACCOUNT_TYPES } from "../format.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 function Tile({ label, value, tone }) {
   return (
@@ -95,6 +96,9 @@ export default function Resumen() {
   const [mail, setMail] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [error, setError] = useState(null);
+  const [tick, setTick] = useState(0);   // bumped when the assistant finishes a turn
+  useCopilotRefresh(() => setTick((t) => t + 1));
+  useCopilotContext(() => ({ view: { month } }));
 
   useEffect(() => {
     let alive = true;
@@ -102,19 +106,19 @@ export default function Resumen() {
       .then(([s, r]) => { if (alive) { setSummary(s); setRecent(r.items); setError(null); } })
       .catch((e) => alive && setError(e.message));
     return () => { alive = false; };
-  }, [month]);
+  }, [month, tick]);
 
   useEffect(() => {
     let alive = true;
     api.mail.spending(month).then((m) => alive && setMail(m)).catch(() => alive && setMail(null));
     return () => { alive = false; };
-  }, [month]);
+  }, [month, tick]);
 
   useEffect(() => {
     let alive = true;
     api.forecastMonth(month).then((f) => alive && setForecast(f)).catch(() => alive && setForecast(null));
     return () => { alive = false; };
-  }, [month]);
+  }, [month, tick]);
 
   const active = (summary?.accounts || []).filter((a) => !a.archived);
   const total = active.reduce((s, a) => s + a.balance, 0);

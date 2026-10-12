@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Field, Empty, useAction } from "../components/ui.jsx";
 import { formatCents, dateLabel } from "../format.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 const FIELDS = [
   ["date", "Fecha"],
@@ -26,8 +27,14 @@ export default function Importar() {
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
   const [run, busy] = useAction(notify);
+  const [tick, setTick] = useState(0);   // bumped when the assistant finishes a turn
+  useCopilotRefresh(() => setTick((t) => t + 1));
+  useCopilotContext(() => ({
+    view: { account_id: accountId },
+    editors: csv.trim() ? [{ kind: "csv-import", object_id: null, dirty: true, fields: { filename, account_id: accountId, category_id: categoryId, mapping, csv_characters: csv.length, preview_rows: preview?.rows?.length ?? preview?.total ?? null } }] : [],
+  }));
 
-  useEffect(() => { api.imports.list().then(setHistory).catch(() => {}); }, [result]);
+  useEffect(() => { api.imports.list().then(setHistory).catch(() => {}); }, [result, tick]);
 
   const doPreview = async (overrides = {}) => {
     if (!csv.trim()) return notify({ kind: "error", text: "Pega el CSV o elige un archivo." });

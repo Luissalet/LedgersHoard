@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Empty, Field, ConfirmDialog, MonthPicker, useAction } from "../components/ui.jsx";
 import { centsToText, dateLabel, monthLabel, thisMonth } from "../format.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 const KIND_LABEL = { charge: "Cobro", refund: "Reembolso", upcoming: "Próximo cobro", cancel: "Cancelación", failed: "Pago fallido", noise: "Sin interés" };
 const SEVERITY_CHIP = { high: "chip chip-danger", medium: "chip chip-warn", low: "chip" };
@@ -211,6 +212,8 @@ export default function Correo() {
     }
   }, [month, notify]);
   useEffect(() => { load(); }, [load]);
+  useCopilotRefresh(() => { load(); });
+  useCopilotContext(() => ({ view: { month, review_count: review.length } }));
   useEffect(() => {
     let alive = true;
     api.mail.status({ source: true }).then((s) => alive && setSource(s.source || { ok: false })).catch((e) => alive && setSource({ ok: false, error: e.message }));

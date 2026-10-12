@@ -4,6 +4,7 @@ import { useApp } from "../App.jsx";
 import { Page, Section, MonthPicker } from "../components/ui.jsx";
 import { MonthsChart, CategoryDonut } from "../components/charts.jsx";
 import { formatCents, monthLabel, monthShort, thisMonth, addMonths } from "../format.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 const ANOMALY_LABELS = {
   duplicate: "Posible cobro doble",
@@ -21,6 +22,9 @@ export default function Informes() {
   const [recurring, setRecurring] = useState([]);
   const [showTable, setShowTable] = useState(false);
   const [anomalies, setAnomalies] = useState(null);
+  const [tick, setTick] = useState(0);   // bumped when the assistant finishes a turn
+  useCopilotRefresh(() => setTick((t) => t + 1));
+  useCopilotContext(() => ({ view: { month } }));
   const cur = (currency) => (currency === "EUR" ? symbol : currency);
 
   useEffect(() => {
@@ -29,7 +33,7 @@ export default function Informes() {
       .then(([m, s, r, a]) => { if (alive) { setMonths(m.months); setSummary(s); setRecurring(r.candidates); setAnomalies(a); } })
       .catch((e) => notify({ kind: "error", text: e.message }));
     return () => { alive = false; };
-  }, [month, notify]);
+  }, [month, notify, tick]);
 
   const totalIncome = months.reduce((s, m) => s + m.income, 0);
   const totalExpense = months.reduce((s, m) => s + m.expense, 0);

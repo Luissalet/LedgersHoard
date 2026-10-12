@@ -3,6 +3,8 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Empty, Field, useAction } from "../components/ui.jsx";
 import { centsToText, dateLabel } from "../format.js";
+import { changedFields, rebaseForm } from "../copilot-context.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 const PERIOD = { monthly: "al mes", yearly: "al año", weekly: "a la semana", unknown: "periodo sin determinar" };
 const STATUS = { active: "Activa", trial: "Prueba", cancelled: "Cancelada", paused: "Pausada" };
@@ -36,17 +38,27 @@ function History({ history, currency }) {
 }
 
 function EditForm({ sub, categories, accounts, onSave, onCancel, busy }) {
-  const [form, setForm] = useState({
-    amount: centsToText(sub.amount_cents), period: sub.period, next_charge_date: sub.next_charge_date || "",
-    category_id: sub.category_id || "", notes: sub.notes || "",
-  });
+  const fromSub = (s) => ({ amount: centsToText(s.amount_cents), period: s.period, next_charge_date: s.next_charge_date || "", category_id: s.category_id || "", notes: s.notes || "" });
+  const [form, setForm] = useState(() => fromSub(sub));
+  const [base, setBase] = useState(() => fromSub(sub));   // only the fields the user changes are saved
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const subKey = JSON.stringify(fromSub(sub));
+  useEffect(() => {
+    const next = fromSub(sub);
+    if (JSON.stringify(next) === JSON.stringify(base)) return;
+    setForm((f) => rebaseForm(base, next, f));
+    setBase(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subKey]);
+  const changed = changedFields(base, form);
+  useCopilotContext(() => ({ editors: [{ kind: "subscription-form", object_id: sub.id, dirty: Object.keys(changed).length > 0, fields: form, changed }] }));
   return (
     <form
       className="panel mt-3 grid gap-3 sm:grid-cols-2"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({ amount: form.amount, period: form.period, next_charge_date: form.next_charge_date || null, category_id: form.category_id || null, notes: form.notes });
+        const payload = { amount: form.amount, period: form.period, next_charge_date: form.next_charge_date || null, category_id: form.category_id || null, notes: form.notes };
+        onSave(Object.fromEntries(Object.entries(payload).filter(([k]) => k in changed)));
       }}
     >
       <Field label="Importe"><input className="field field-sm num" inputMode="decimal" value={form.amount} onChange={set("amount")} required /></Field>
@@ -126,6 +138,7 @@ export default function Suscripciones() {
     }
   }, [notify]);
   useEffect(() => { load(); }, [load]);
+  useCopilotRefresh(() => { load(); });
 
   const patch = async (sub, change, okText) => {
     const out = await run(() => api.subscriptions.update(sub.id, change), okText);

@@ -3,6 +3,8 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Field } from "../components/ui.jsx";
 import { formatCents, thisMonth, addMonths, monthLabel } from "../format.js";
+import { changedFields } from "../copilot-context.js";
+import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
 export default function Prevision() {
   const { accounts, settings, notify } = useApp();
@@ -17,6 +19,7 @@ export default function Prevision() {
   const [months, setMonths] = useState(6);
   const [line, setLine] = useState({ account_id: "", label: "", amount: "", start_month: addMonths(thisMonth(), 1), end_month: "", cadence: "once" });
   const [editingId, setEditingId] = useState(null);
+  const [lineBase, setLineBase] = useState(null);   // the supuesto as it was when editing began: only changed fields are saved
   const load = useCallback(async () => {
     const [all, details, forecast] = await Promise.all([
       api.scenarios.list(), selected ? api.scenarios.get(selected) : Promise.resolve(null), api.forecast(selected || undefined, from, Number(months)),
@@ -24,6 +27,18 @@ export default function Prevision() {
     setScenarios(all); setScenario(details); setProjection(forecast);
   }, [selected, from, months]);
   useEffect(() => { load().catch((e) => notify({ kind: "error", text: e.message })); }, [load, notify]);
+  useCopilotRefresh(() => { load().catch(() => {}); });
+  useCopilotContext(() => {
+    const blankLine = !line.label && !line.amount;
+    const editing = !!editingId;
+    return {
+      view: { scenario: selected, from, months },
+      editors: [
+        ...(scenario && (editing || !blankLine) ? [{ kind: "scenario-line-form", object_id: editingId, scenario_id: selected, dirty: true, fields: line }] : []),
+        ...(name.trim() ? [{ kind: "scenario-new", object_id: null, dirty: true, fields: { name } }] : []),
+      ],
+    };
+  });
   useEffect(() => { api.recurring(thisMonth()).then((r) => setCandidates(r.candidates)).catch(() => {}); }, []);
   const act = async (fn, success) => {
     try { const out = await fn(); await load(); if (success) notify({ kind: "ok", text: success }); return out; }
@@ -39,8 +54,10 @@ export default function Prevision() {
     if (!selected) return;
     const payload = { ...line, account_id: line.account_id || accounts?.[0]?.id,
       end_month: line.cadence !== "once" && line.end_month ? line.end_month : null };
-    const out = await act(() => editingId ? api.scenarios.updateLine(selected, editingId, payload) : api.scenarios.addLine(selected, payload), editingId ? "Supuesto actualizado." : "Supuesto añadido.");
-    if (out) { setLine({ ...line, label: "", amount: "" }); setEditingId(null); }
+    const original = lineBase && { account_id: lineBase.account_id, label: lineBase.label, amount: (lineBase.amount_cents / 100).toFixed(2), start_month: lineBase.start_month, end_month: lineBase.end_month || null, cadence: lineBase.cadence };
+    const patch = editingId && original ? changedFields(original, payload) : payload;
+    const out = await act(() => editingId ? api.scenarios.updateLine(selected, editingId, patch) : api.scenarios.addLine(selected, payload), editingId ? "Supuesto actualizado." : "Supuesto añadido.");
+    if (out) { setLine({ ...line, label: "", amount: "" }); setEditingId(null); setLineBase(null); }
   };
   return <Page title="Previsión" description="Compara el saldo registrado con un escenario de ingresos y gastos futuros. Los supuestos no crean movimientos reales.">
     <Section title="Escenarios">
@@ -72,7 +89,7 @@ export default function Prevision() {
         setLine({ account_id: account?.id || "", label: c.counterparty, amount: (-c.latest_amount_cents / 100).toFixed(2), start_month: next, end_month: "", cadence: c.frequency });
       }}>{c.counterparty} · {formatCents(c.latest_amount_cents, c.currency === "EUR" ? symbol : c.currency)}</button>)}</div></div>}
       {scenario.lines.length ? <div className="overflow-x-auto mt-4"><table className="table"><thead><tr><th>Concepto</th><th>Cuenta</th><th>Desde</th><th>Frecuencia</th><th className="r">Importe</th><th></th></tr></thead><tbody>
-        {scenario.lines.map((item) => <tr key={item.id}><td>{item.label}</td><td>{accounts?.find((a) => a.id === item.account_id)?.name || item.account_id}</td><td>{item.start_month}{item.end_month ? ` → ${item.end_month}` : ""}</td><td>{item.cadence === "monthly" ? "Mensual" : item.cadence === "quarterly" ? "Trimestral" : "Puntual"}</td><td className="r num">{formatCents(item.amount_cents, accounts?.find((a) => a.id === item.account_id)?.currency === "EUR" ? symbol : accounts?.find((a) => a.id === item.account_id)?.currency || symbol)}</td><td><button className="btn-link mr-3" type="button" onClick={() => { setEditingId(item.id); setLine({ account_id: item.account_id, label: item.label, amount: (item.amount_cents / 100).toFixed(2), start_month: item.start_month, end_month: item.end_month || "", cadence: item.cadence }); }}>Editar</button><button className="btn-link" type="button" onClick={() => act(() => api.scenarios.removeLine(selected, item.id), "Supuesto eliminado.")}>Quitar</button></td></tr>)}
+        {scenario.lines.map((item) => <tr key={item.id}><td>{item.label}</td><td>{accounts?.find((a) => a.id === item.account_id)?.name || item.account_id}</td><td>{item.start_month}{item.end_month ? ` → ${item.end_month}` : ""}</td><td>{item.cadence === "monthly" ? "Mensual" : item.cadence === "quarterly" ? "Trimestral" : "Puntual"}</td><td className="r num">{formatCents(item.amount_cents, accounts?.find((a) => a.id === item.account_id)?.currency === "EUR" ? symbol : accounts?.find((a) => a.id === item.account_id)?.currency || symbol)}</td><td><button className="btn-link mr-3" type="button" onClick={() => { setEditingId(item.id); setLineBase(item); setLine({ account_id: item.account_id, label: item.label, amount: (item.amount_cents / 100).toFixed(2), start_month: item.start_month, end_month: item.end_month || "", cadence: item.cadence }); }}>Editar</button><button className="btn-link" type="button" onClick={() => act(() => api.scenarios.removeLine(selected, item.id), "Supuesto eliminado.")}>Quitar</button></td></tr>)}
       </tbody></table></div> : <p className="help mt-3">Añade un gasto o ingreso para comparar el escenario con el saldo registrado.</p>}
     </Section>}
     <Section title="Saldos proyectados" className="mt-4" aside={<div className="flex gap-2"><input className="field field-sm" aria-label="Mes inicial" type="month" value={from} onChange={(e) => setFrom(e.target.value)} /><select className="field field-sm" aria-label="Horizonte" value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 12, 24].map((n) => <option key={n} value={n}>{n} meses</option>)}</select></div>}>

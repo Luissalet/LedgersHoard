@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
 import { Toast } from "./components/ui.jsx";
+import { useCopilotRefresh } from "./copilot-hooks.js";
 import Resumen from "./pages/Resumen.jsx";
 import Movimientos from "./pages/Movimientos.jsx";
 import Cuentas from "./pages/Cuentas.jsx";
@@ -64,6 +65,7 @@ export default function App() {
     }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  useCopilotRefresh(refresh);   // the assistant finished a turn: accounts, categories and settings may have changed
 
   const notify = useCallback((message) => setToast(message), []);
   const value = useMemo(() => ({ ...(state || {}), ready: !!state, refresh, notify }), [state, refresh, notify]);

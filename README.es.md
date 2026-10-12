@@ -136,6 +136,20 @@ Herramientas (46):
 
 Cada descripción termina con una línea `Sinónimos:` con las palabras que se usan en español. Si un nombre de cuenta o categoría es ambiguo, la herramienta devuelve `candidates` para que el asistente pregunte en vez de adivinar.
 
+## Copiloto de Faustus
+
+Todas las páginas tienen un botón flotante **Faustus** (abajo a la derecha) que abre el asistente de Faustus en un panel lateral. La conversación, el modelo, la memoria y las herramientas viven en Faustus: esta app solo retransmite el panel (`/api/copilot/*`) y no guarda historial. Necesita Faustus en marcha (`HOARD_FAUSTUS_URL`, por defecto `http://127.0.0.1:7000`); sin él, el botón avisa de que el copiloto no está disponible y el resto de la app sigue igual.
+
+Lo que cada turno le cuenta al asistente (`window.hoardCopilot.context()`, leído con la propia API de la app):
+
+- `view.page` (`summary`, `entries`, `shared_expenses`, `accounts`, `categories`, `import`, `reports`, `forecast`, `mail`, `subscriptions`, `settings`), el mes en Resumen, Informes y Correo, y los filtros en Movimientos.
+- `active_objects`: el resumen del mes; el movimiento abierto en `#/movimientos?tx=<id>`; la cuenta y la categoría usadas como filtro; el escenario abierto en Previsión con sus supuestos; la persona a la que se le apunta una devolución en Compartidos; y el objeto de cualquier formulario de edición abierto (movimiento, cuenta, categoría, suscripción, supuesto). Un formulario de alta, `tx=new` o un id desconocido no añaden objeto.
+- `view.editor`: los campos escritos en el formulario abierto y cuáles han cambiado (la fila de alta rápida, la edición de un movimiento, el formulario de cuenta o de suscripción, un supuesto, una importación de CSV pegado, los ajustes). Si hay varios formularios abiertos, van en `view.editors`.
+
+Cuando el asistente termina un turno, la página abierta recarga sus datos sin remontarse: cuentas, categorías, el listado, el mes, el escenario. Los formularios conservan lo que habías escrito. Al editar se guardan **solo los campos que has cambiado**, de modo que un cambio que el asistente hiciera mientras tanto en otro campo no se pisa.
+
+Se apaga con `HOARD_COPILOT=0` (sin rutas `/api/copilot/*` y sin botón). El cliente está en `client/src/copilot-context.js` (contexto y recarga) y `client/src/copilot-hooks.js` (lo que informa cada página y formulario).
+
 ## Familia
 
 Ledger participa en el hub de la familia Hoard, siempre de forma opcional: con el hub apagado todo lo demás responde, con un error claro donde haga falta otra app.

@@ -87,6 +87,10 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 | `PUT /api/settings` | `{ currency_symbol }`. |
 | `GET /api/agent/tools` | Tool catalogue (name, description, JSON schema, annotations) and the assistant instructions. |
 | `POST /api/agent/call` | `{ name, arguments }` with `Authorization: Bearer <token>`; used by the MCP bridge. |
+| `GET /api/copilot/info` | Faustus copilot: `{ app_id, app_name, data_space_id, panel_url, ... }`; 503 `copilot_unavailable` when Faustus is not reachable. |
+| `GET /api/copilot/panel.js` | The Faustus panel script, relayed from Faustus. |
+| `GET /api/copilot/launcher.js` | The floating button and panel launcher the app adds to every HTML page. |
+| `POST /api/copilot/proxy` | `{ path, method, body? }`: relays the panel's chat calls to Faustus (only `/api/chat_stream`, `/api/chat/*`, `/api/session(s)` and `/api/hoard-copilot/*`), adds this app's origin and keeps the Faustus token out of the browser. |
 
 ## Mail: payments and subscriptions
 
@@ -173,6 +177,20 @@ Tools (46):
 | `ledger_notifications` | Recent notifications: recorded payments, new subscriptions, price changes, trials, failed payments. |
 
 Every description ends with a `Sinónimos:` line of Spanish words. Ambiguous account or category names return `candidates` so the assistant can ask instead of guessing.
+
+## Faustus copilot
+
+Every page has a floating **Faustus** button (bottom right) that opens the Faustus assistant in a side panel. The conversation, model, memory and tools live in Faustus: this app only relays the panel (`/api/copilot/*`) and keeps no history. It needs Faustus running (`HOARD_FAUSTUS_URL`, default `http://127.0.0.1:7000`); without it the button explains that the copilot is unavailable and the rest of the app is unaffected.
+
+What every turn tells the assistant (`window.hoardCopilot.context()`, read through the app's own API):
+
+- `view.page` (`summary`, `entries`, `shared_expenses`, `accounts`, `categories`, `import`, `reports`, `forecast`, `mail`, `subscriptions`, `settings`), the month on Resumen, Informes and Correo, and the movement filters on Movimientos.
+- `active_objects`: the month summary; the movement open at `#/movimientos?tx=<id>`; the account and category used as filters; the scenario open in Previsión with its lines; the person being settled in Compartidos; and the object behind any open edit form (movement, account, category, subscription, scenario line). A creation form, `tx=new` or an unknown id adds no object.
+- `view.editor`: the fields typed in the open form and which of them changed (the quick-add row, an inline movement edit, an account or subscription form, a scenario line, a pasted CSV import, the settings). Several open forms are listed in `view.editors`.
+
+When the assistant finishes a turn the open page reloads its data in place: accounts, categories, the list, the month, the scenario. Forms keep what you typed. Editing saves **only the fields you changed**, so a change the assistant made to another field in the meantime is not overwritten.
+
+Turn it off with `HOARD_COPILOT=0` (no `/api/copilot/*` routes, no button). The client is in `client/src/copilot-context.js` (context and refresh) and `client/src/copilot-hooks.js` (what each page and form reports).
 
 ## Family
 

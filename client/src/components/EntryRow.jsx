@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { changedFields, rebaseForm } from "../copilot-context.js";
+import { useCopilotContext } from "../copilot-hooks.js";
 import { formatCents, centsToText, dateLabel } from "../format.js";
 
 const CategorySelect = ({ value, onChange, categories, className = "" }) => (
@@ -71,8 +73,25 @@ export function draftFromEntry(e) {
 export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete, onSplit, onOpenDoc, highlight, busy }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => draftFromEntry(entry));
-  const start = () => { setDraft(draftFromEntry(entry)); setEditing(true); };
-  const save = async () => { const ok = await onSave(entry.id, draft); if (ok) setEditing(false); };
+  const [base, setBase] = useState(null);   // the entry as it was when editing began: only fields the user changed are saved
+  const start = () => { const from = draftFromEntry(entry); setBase(from); setDraft(from); setEditing(true); };
+  const changed = editing && base ? changedFields(base, draft) : {};
+  // The entry reloaded under the editor (an agent changed it): untouched fields follow it, typed ones stay.
+  const entryKey = JSON.stringify(draftFromEntry(entry));
+  useEffect(() => {
+    if (!editing || !base) return;
+    const next = draftFromEntry(entry);
+    if (JSON.stringify(next) === JSON.stringify(base)) return;
+    setDraft((d) => rebaseForm(base, next, d));
+    setBase(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryKey]);
+  useCopilotContext(() => ({ editors: editing ? [{ kind: "entry-form", object_id: entry.id, dirty: Object.keys(changed).length > 0, fields: draft, changed }] : [] }));
+  const save = async () => {
+    if (!Object.keys(changed).length) { setEditing(false); return; }
+    const ok = await onSave(entry.id, changed);
+    if (ok) setEditing(false);
+  };
   if (editing) {
     return (
       <tr>
