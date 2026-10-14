@@ -43,7 +43,7 @@ test("the new tools are in the catalogue with synonyms, short headlines and corr
   assert.equal(tools.mail_scan.annotations.openWorldHint, true);
   assert.equal(tools.mail_status.annotations.openWorldHint, true);
   assert.equal(tools.list_accounts.annotations.openWorldHint, false);
-  assert.equal(TOOLS.length, 47);
+  assert.equal(TOOLS.length, 48);
   assert.equal(tools.mail_reset.annotations.destructiveHint, true);
   assert.match(AGENT_INSTRUCTIONS, /untrusted/);
   assert.match(AGENT_INSTRUCTIONS, /never invent an amount, date or merchant/);
@@ -383,4 +383,22 @@ test("the real helper never receives the database or anything else from the app"
   const { mailSource } = await import("../server/mail-source.js");
   assert.equal(typeof mailSource().scan, "function");
   installFakeSource([]);
+});
+
+test("subscription_create adds a subscription the user names, and a second one for the same merchant points to update", async () => {
+  const made = await s.agent("subscription_create", { merchant: "Netflix", amount: "14,99" });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  assert.equal(made.body.subscription.merchant, "Netflix");
+  assert.equal(made.body.subscription.amount_cents, 1499);
+  assert.equal(made.body.subscription.period, "monthly");
+  assert.equal(made.body.subscription.status, "active");
+  const yearly = await s.agent("subscription_create", { merchant: "Pokémon HOME", amount: "17,99", period: "yearly" });
+  assert.equal(yearly.status, 200, JSON.stringify(yearly.body));
+  const usd = await s.agent("subscription_create", { merchant: "GitHub Pro", amount: "4", currency: "usd" });
+  assert.equal(usd.body.subscription.currency, "USD");
+  const list = await s.agent("subscriptions_list", {});
+  assert.deepEqual(list.body.subscriptions.map((x) => x.merchant).sort(), ["GitHub Pro", "Netflix", "Pokémon HOME"]);
+  const again = await s.agent("subscription_create", { merchant: "netflix", amount: "15" });
+  assert.equal(again.status, 409);
+  assert.match(again.body.error, /subscription_update/);
 });
