@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @import "./hoard-theme.css";
 
+.annual-report-header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 16px; }
+.annual-report-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.annual-report-controls .label { margin-bottom: 0; }
+.annual-report-controls input { display: block; width: 110px; margin-top: 4px; }
+.annual-report-currencies { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 16px 10px; }
+.annual-report-currencies [aria-pressed="true"] { background: var(--accent); color: var(--hoard-accent-ink); border-color: var(--accent); }
+.annual-report-tables { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,1fr); gap: 24px; }
+.annual-report-months { min-width: 440px; }
+.annual-report-categories { min-width: 350px; }
+.annual-report tfoot { font-weight: 600; border-top: 2px solid var(--line); }
+.annual-report tbody th { font-weight: 500; text-align: left; }
+@media (max-width: 1150px) { .annual-report-tables { grid-template-columns: minmax(0,1fr); } }
+
 .forecast-comparison-heading { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; }
 .forecast-comparison-result { margin: 18px 0; }
 .forecast-comparison-result strong { font-size: 22px; }
