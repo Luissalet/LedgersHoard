@@ -1,5 +1,11 @@
 # Ledger's Hoard
 
+**Movimientos → Buscar pago** consulta gastos registrados del mismo importe entre
+cinco días antes y cinco después de una fecha, con comercio y moneda opcionales.
+Conserva la puntuación nativa y permite abrir el movimiento original. El comercio
+influye en el orden, no excluye candidatos; una coincidencia no confirma que una
+factura esté pagada. No modifica registros. API/MCP conservan `tx_find` existente.
+
 **Cuentas → Consultar saldo a una fecha** muestra el saldo inicial guardado más los movimientos hasta el corte incluido, por cuenta y moneda. Incluye las cuentas archivadas con su estado actual; no reconstruye cambios históricos del saldo inicial ni del archivado. Identifica la fecha aplicada, limpia el resultado anterior al cambiar el corte y conserva la fecha ante error o refresco de datos. `GET /api/accounts/balances?at=YYYY-MM-DD` devuelve `{at, accounts}` mediante `accountBalances(at)`, el mismo cálculo nativo de `balance` MCP; `/api/accounts` conserva su respuesta actual.
 
 Libro de cuentas doméstico local: cuentas, movimientos por categoría, presupuestos mensuales, informes, importación de extractos CSV del banco y pagos leídos del correo. Todo se guarda en un único archivo SQLite en vuestro ordenador y se expone a un asistente mediante MCP.

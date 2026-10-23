@@ -17,6 +17,7 @@ const qs = (params) => {
 };
 
 export const api = {
+  paymentLookup: (criteria) => request("GET", `/api/tx/find${qs(criteria)}`),
   state: () => request("GET", "/api/state"),
   settings: (patch) => request("PUT", "/api/settings", patch),
   accounts: {

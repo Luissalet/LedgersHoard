@@ -5,6 +5,7 @@ import { attachDoc, detachDoc, resolveDocUrl } from "./tx-links.js";
 import { addSplit, removeSplit, splitSettle, splitsBalance, splitsOf } from "./splits.js";
 import { yearReport } from "./reports.js";
 import { thisMonth } from "./dates.js";
+import { callTool } from "./agent-tools.js";
 
 const monthQuery = z.string().regex(/^\d{4}-\d{2}$/).optional();
 
@@ -12,6 +13,9 @@ const monthQuery = z.string().regex(/^\d{4}-\d{2}$/).optional();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 export function installFamilyRoutes(app) {
+  app.get("/api/tx/find", wrap(async (req, res) => res.json(await callTool("tx_find", {
+    amount: req.query.amount, date: req.query.date, merchant: req.query.merchant, currency: req.query.currency,
+  }))));
   app.get("/api/forecast/month", (req, res) => res.json(forecastMonth({ month: monthQuery.parse(req.query.month) || thisMonth() })));
   app.get("/api/reports/year", (req, res) => res.json(yearReport(req.query.year ? Number(req.query.year) : new Date().getFullYear())));
 

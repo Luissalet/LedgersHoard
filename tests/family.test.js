@@ -93,6 +93,12 @@ test("tx_find scores amount, date and merchant, best first, and only looks at ex
   assert.equal(out.matches[0].amount, 54.99);
   assert.equal(out.matches[0].merchant, "Tienda Ejemplo S.L.");
   assert.ok(out.matches[1].score < 0.8, "another merchant three days away is not a strong match");
+  const snapshot = db().prepare("SELECT * FROM entries ORDER BY id").all();
+  const ui = await s.call("GET", "/api/tx/find?amount=54%2C99&date=2026-10-05&merchant=Tienda%20Ejemplo");
+  assert.equal(ui.status, 200);
+  assert.deepEqual(ui.body, out, "the UI reader delegates the same native match contract");
+  assert.equal((await s.call("GET", "/api/tx/find?amount=abc&date=2026-10-05")).status, 400);
+  assert.deepEqual(db().prepare("SELECT * FROM entries ORDER BY id").all(), snapshot, "lookup never modifies entries");
   // a number works as the amount, days narrows the window, a currency filters
   const narrow = (await tool("tx_find", { amount: 54.99, date: "2026-10-05", days: 1 })).body;
   assert.deepEqual(narrow.matches.map((m) => m.tx_id), [exact.id]);

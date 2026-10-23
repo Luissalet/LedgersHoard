@@ -4,6 +4,7 @@ import { useApp } from "../App.jsx";
 import { Page, Section, Empty, ConfirmDialog, useAction, Field } from "../components/ui.jsx";
 import { EntryRow, EntryFields, EntryForm, emptyDraft } from "../components/EntryRow.jsx";
 import SplitDialog from "../components/SplitDialog.jsx";
+import PaymentLookup from "../components/PaymentLookup.jsx";
 import { formatCents, today, thisMonth } from "../format.js";
 import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
@@ -150,6 +151,7 @@ export default function Movimientos() {
         </div>
       )}
       {showTransfer && <div className="mb-4"><TransferForm accounts={activeAccounts} run={run} busy={busy} onDone={() => { setShowTransfer(false); load(); refresh(); }} /></div>}
+      <PaymentLookup accounts={accounts} />
       {!tx && <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-[150px_150px_1fr_1fr_1fr]">
         <input type="date" className="field field-sm" value={filter.from} onChange={setF("from")} aria-label="Desde" />
         <input type="date" className="field field-sm" value={filter.to} onChange={setF("to")} aria-label="Hasta" />

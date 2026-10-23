@@ -1,5 +1,11 @@
 # Ledger's Hoard
 
+**Entries → Find payment** looks up recorded expenses by exact amount within five
+days either side of a date, with optional merchant and currency. Native matches
+retain their score and link to the original entry. Merchant affects ranking,
+not exclusion; a match is not confirmation that an invoice was paid. No entries
+are changed. The same lookup is available as `tx_find` through API/MCP.
+
 **Accounts → Query balances at a date** shows the stored opening balance plus entries dated up to and including the chosen cutoff, per account and currency. It includes archived accounts with their current archive status; it does not reconstruct historical changes to the opening balance or account status. The applied date is labelled, changing the cutoff clears the old result, and errors or data refreshes keep the selected date. `GET /api/accounts/balances?at=YYYY-MM-DD` returns `{at, accounts}` through the same native `accountBalances(at)` calculation as MCP `balance`; the existing `/api/accounts` response is unchanged.
 
 Local-first household ledger: accounts, categorised entries, monthly budgets, reports, bank CSV imports, payments read from your mail, shared expenses and a month-end forecast, stored in a single SQLite file on your own computer and exposed to an assistant through MCP.
