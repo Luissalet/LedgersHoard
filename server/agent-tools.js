@@ -203,6 +203,11 @@ export const TOOLS = [
     z.object({ scenario_id: z.string().optional(), from: z.string().refine(isMonth).optional(), months: z.number().int().min(1).max(24).default(6) }), RO,
     (a) => forecasts.forecast(a)),
 
+  tool("compare_cash_forecasts",
+    "Compare two cash-flow scenarios by month, account and currency.\nOmit either id for recorded balances. Returns B minus A monthly and cumulative differences, plus both assumption lists. No currency conversion or real entries.\nSinónimos: comparar escenarios, diferencia entre previsiones, alternativa de gastos",
+    z.object({ scenario_id: z.string().optional(), comparison_id: z.string().optional(), from: z.string().refine(isMonth).optional(), months: z.number().int().min(1).max(24).default(6) }), RO,
+    (a) => forecasts.compareForecasts(a)),
+
   tool("balance",
     "Balance of one account (or all) at a date.\nBalance of one account (name or id) at a date (YYYY-MM-DD, default today), opening balance included. Without account returns every account.\nSinónimos: saldo, cuánto tengo, dinero en la cuenta, saldo del banco, saldo en efectivo",
     z.object({ account: z.string().optional(), at: z.string().optional() }), RO,

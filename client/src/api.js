@@ -53,6 +53,7 @@ export const api = {
   recurring: (to, months = 18) => request("GET", `/api/reports/recurring${qs({ to, months })}`),
   anomalies: (to, months = 12, recent_days = 45) => request("GET", `/api/reports/anomalies${qs({ to, months, recent_days })}`),
   forecast: (scenario_id, from, months = 6) => request("GET", `/api/forecast${qs({ scenario_id, from, months })}`),
+  compareForecasts: (scenario_id, comparison_id, from, months = 6) => request("GET", `/api/forecast/compare${qs({ scenario_id, comparison_id, from, months })}`),
   scenarios: {
     list: () => request("GET", "/api/scenarios"),
     get: (id) => request("GET", `/api/scenarios/${id}`),

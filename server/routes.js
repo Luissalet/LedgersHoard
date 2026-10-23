@@ -138,6 +138,12 @@ export function installRoutes(app, { version, dataDirConfigured }) {
     return out ? res.json(out) : notFound(res);
   });
   app.delete("/api/scenarios/:id/lines/:lineId", (req, res) => res.json({ ok: forecast.deleteScenarioLine(req.params.id, req.params.lineId) }));
+  app.get("/api/forecast/compare", (req, res) => res.json(forecast.compareForecasts({
+    scenario_id: req.query.scenario_id || null,
+    comparison_id: req.query.comparison_id || null,
+    from: req.query.from || undefined,
+    months: req.query.months === undefined ? 6 : Number(req.query.months),
+  })));
   app.get("/api/forecast", (req, res) => res.json(forecast.forecast({
     scenario_id: req.query.scenario_id || null,
     from: req.query.from || undefined,

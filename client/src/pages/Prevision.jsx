@@ -5,6 +5,7 @@ import { Page, Section, Field } from "../components/ui.jsx";
 import { formatCents, thisMonth, addMonths, monthLabel } from "../format.js";
 import { changedFields } from "../copilot-context.js";
 import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
+import ForecastComparison from "../components/ForecastComparison.jsx";
 
 export default function Prevision() {
   const { accounts, settings, notify } = useApp();
@@ -13,6 +14,8 @@ export default function Prevision() {
   const [selected, setSelected] = useState("");
   const [scenario, setScenario] = useState(null);
   const [projection, setProjection] = useState(null);
+  const [comparisonId, setComparisonId] = useState("off");
+  const [comparison, setComparison] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [name, setName] = useState("");
   const [from, setFrom] = useState(addMonths(thisMonth(), 1));
@@ -27,12 +30,20 @@ export default function Prevision() {
     setScenarios(all); setScenario(details); setProjection(forecast);
   }, [selected, from, months]);
   useEffect(() => { load().catch((e) => notify({ kind: "error", text: e.message })); }, [load, notify]);
+  useEffect(() => {
+    let current = true;
+    setComparison(null);
+    if (comparisonId !== "off") api.compareForecasts(selected || undefined, comparisonId || undefined, from, Number(months))
+      .then((result) => { if (current) setComparison(result); })
+      .catch((error) => { if (current) notify({ kind: "error", text: error.message }); });
+    return () => { current = false; };
+  }, [selected, comparisonId, from, months, scenario, notify]);
   useCopilotRefresh(() => { load().catch(() => {}); });
   useCopilotContext(() => {
     const blankLine = !line.label && !line.amount;
     const editing = !!editingId;
     return {
-      view: { scenario: selected, from, months },
+      view: { scenario: selected, comparison_scenario: comparisonId === "off" ? null : comparisonId, from, months },
       editors: [
         ...(scenario && (editing || !blankLine) ? [{ kind: "scenario-line-form", object_id: editingId, scenario_id: selected, dirty: true, fields: line }] : []),
         ...(name.trim() ? [{ kind: "scenario-new", object_id: null, dirty: true, fields: { name } }] : []),
@@ -65,10 +76,19 @@ export default function Prevision() {
         <Field label="Escenario"><select className="field" value={selected} onChange={(e) => setSelected(e.target.value)}>
           <option value="">Solo saldo registrado</option>{scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select></Field>
+        <Field label="Comparar con (B)"><select className="field" value={comparisonId} onChange={(e) => setComparisonId(e.target.value)}>
+          <option value="off">Sin comparar</option><option value="">Solo saldo registrado</option>{scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select></Field>
         <form onSubmit={create} className="flex gap-2 items-end"><Field label="Nuevo escenario"><input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Mudanza" required /></Field><button className="btn" type="submit">Crear</button></form>
-        {scenario && <button className="btn" type="button" onClick={async () => { if (!window.confirm(`¿Eliminar el escenario ${scenario.name}?`)) return; try { await api.scenarios.remove(scenario.id); setSelected(""); setEditingId(null); notify({ kind: "ok", text: "Escenario eliminado." }); } catch (e) { notify({ kind: "error", text: e.message }); } }}>Eliminar escenario</button>}
+        {scenario && <button className="btn" type="button" onClick={async () => { if (!window.confirm(`¿Eliminar el escenario ${scenario.name}?`)) return; try { await api.scenarios.remove(scenario.id); if (comparisonId === scenario.id) setComparisonId("off"); setSelected(""); setEditingId(null); notify({ kind: "ok", text: "Escenario eliminado." }); } catch (e) { notify({ kind: "error", text: e.message }); } }}>Eliminar escenario</button>}
+      </div>
+      <div className="flex flex-wrap items-end gap-3 mt-4">
+        <Field label="Mes inicial"><input className="field" aria-label="Mes inicial" type="month" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+        <Field label="Horizonte"><select className="field" aria-label="Horizonte" value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 12, 24].map((n) => <option key={n} value={n}>{n} meses</option>)}</select></Field>
+        <p className="help pb-2">El mismo periodo se aplica a las dos alternativas.</p>
       </div>
     </Section>
+    {comparison && <ForecastComparison comparison={comparison} accounts={accounts || []} symbol={symbol} />}
     {scenario && <Section title={`Supuestos · ${scenario.name}`} className="mt-4">
       <form onSubmit={addLine} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6 items-end">
         <Field label="Concepto"><input className="field" required value={line.label} onChange={(e) => setLine({ ...line, label: e.target.value })} placeholder="Alquiler" /></Field>
@@ -92,7 +112,7 @@ export default function Prevision() {
         {scenario.lines.map((item) => <tr key={item.id}><td>{item.label}</td><td>{accounts?.find((a) => a.id === item.account_id)?.name || item.account_id}</td><td>{item.start_month}{item.end_month ? ` → ${item.end_month}` : ""}</td><td>{item.cadence === "monthly" ? "Mensual" : item.cadence === "quarterly" ? "Trimestral" : "Puntual"}</td><td className="r num">{formatCents(item.amount_cents, accounts?.find((a) => a.id === item.account_id)?.currency === "EUR" ? symbol : accounts?.find((a) => a.id === item.account_id)?.currency || symbol)}</td><td><button className="btn-link mr-3" type="button" onClick={() => { setEditingId(item.id); setLineBase(item); setLine({ account_id: item.account_id, label: item.label, amount: (item.amount_cents / 100).toFixed(2), start_month: item.start_month, end_month: item.end_month || "", cadence: item.cadence }); }}>Editar</button><button className="btn-link" type="button" onClick={() => act(() => api.scenarios.removeLine(selected, item.id), "Supuesto eliminado.")}>Quitar</button></td></tr>)}
       </tbody></table></div> : <p className="help mt-3">Añade un gasto o ingreso para comparar el escenario con el saldo registrado.</p>}
     </Section>}
-    <Section title="Saldos proyectados" className="mt-4" aside={<div className="flex gap-2"><input className="field field-sm" aria-label="Mes inicial" type="month" value={from} onChange={(e) => setFrom(e.target.value)} /><select className="field field-sm" aria-label="Horizonte" value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 12, 24].map((n) => <option key={n} value={n}>{n} meses</option>)}</select></div>}>
+    <Section title="Saldos proyectados" className="mt-4">
       <p className="help mb-3">Los saldos registrados incluyen movimientos ya anotados. La diferencia procede solo de supuestos del escenario.</p>
       {projection && <div className="overflow-x-auto"><table className="table"><thead><tr><th>Mes</th><th className="r">Registrado</th><th className="r">Variación prevista</th><th className="r">Escenario</th></tr></thead><tbody>{projection.rows.map((row) => <tr key={row.month}><td>{monthLabel(row.month)}{row.lines.length > 0 && <details><summary className="btn-link">{row.lines.length} supuesto(s)</summary><span className="help">{row.lines.map((l) => `${l.label}: ${formatCents(l.amount_cents, row.accounts.find((a) => a.account_id === l.account_id)?.currency === "EUR" ? symbol : row.accounts.find((a) => a.account_id === l.account_id)?.currency || symbol)}`).join(" · ")}</span></details>}{row.accounts.length > 1 && <details><summary className="btn-link">Por cuenta</summary><span className="help">{row.accounts.map((a) => `${a.name}: ${formatCents(a.balance, a.currency === "EUR" ? symbol : a.currency)}`).join(" · ")}</span></details>}</td><td className="r num">{row.base_balance === null ? "Por cuenta" : formatCents(row.base_balance, row.currency === "EUR" ? symbol : row.currency)}</td><td className="r num">{row.change === null ? "Por cuenta" : formatCents(row.change, row.currency === "EUR" ? symbol : row.currency)}</td><td className="r num"><strong>{row.balance === null ? "Por cuenta" : formatCents(row.balance, row.currency === "EUR" ? symbol : row.currency)}</strong></td></tr>)}</tbody></table></div>}
     </Section>

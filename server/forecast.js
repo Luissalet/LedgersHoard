@@ -100,5 +100,26 @@ export function forecast({ scenario_id = null, from = addMonths(thisMonth(), 1),
       balance: oneCurrency ? byAccount.reduce((s, a) => s + a.balance, 0) : null, accounts: byAccount,
       lines: lines.map((line) => ({ ...line, source: "assumption" })) });
   }
-  return { from, months, scenario, rows, note: "El saldo base es el saldo registrado hasta el mes anterior al inicio. Solo se proyectan supuestos explícitos; no se infieren pagos futuros." };
+  return { from, months, scenario, rows, note: "El saldo base incluye los movimientos registrados hasta el final de cada mes. Los supuestos se acumulan desde el mes inicial de la proyección; no se infieren pagos futuros." };
+}
+
+export function compareForecasts({ scenario_id = null, comparison_id = null, from, months = 6 } = {}) {
+  const left = forecast({ scenario_id, from, months });
+  const right = forecast({ scenario_id: comparison_id, from, months });
+  const rows = left.rows.map((row, index) => {
+    const accounts = row.accounts.map((account, accountIndex) => {
+      const other = right.rows[index].accounts[accountIndex];
+      return { account_id: account.account_id, name: account.name, currency: account.currency,
+        base_balance: account.base_balance, left_balance: account.balance, right_balance: other.balance,
+        difference: other.balance - account.balance, monthly_difference: other.change - account.change };
+    });
+    const currencies = [...new Set(accounts.map((account) => account.currency))].map((currency) => {
+      const selected = accounts.filter((account) => account.currency === currency);
+      return { currency, ...Object.fromEntries(["base_balance", "left_balance", "right_balance", "difference", "monthly_difference"]
+        .map((key) => [key, selected.reduce((sum, account) => sum + account[key], 0)])) };
+    });
+    return { month: row.month, accounts, currencies };
+  });
+  return { from: left.from, months, left: left.scenario, right: right.scenario, rows,
+    note: left.note, difference_note: "Las diferencias son B menos A. Cada divisa se calcula por separado, sin conversión." };
 }

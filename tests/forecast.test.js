@@ -82,3 +82,32 @@ test("quarterly assumptions repeat every third month and stop at their end month
     assert.deepEqual(rows.map((r) => r.lines.length), [1, 0, 0, 1, 0, 0]);
   } finally { await s.stop(); }
 });
+
+test("scenario comparison shares recorded balances and separates monthly and cumulative differences by currency", async () => {
+  const s = await bootServer();
+  try {
+    const eur = (await s.call("POST", "/api/accounts", { name: "Banco", opening_balance: 100000 })).body;
+    const usd = (await s.call("POST", "/api/accounts", { name: "Dólares", currency: "USD", opening_balance: 30000 })).body;
+    await s.call("POST", "/api/entries", { account_id: eur.id, date: "2026-11-10", amount_cents: 25000 });
+    const a = (await s.agent("create_scenario", { name: "Actual" })).body;
+    const b = (await s.agent("create_scenario", { name: "Alternativa" })).body;
+    await s.agent("add_scenario_line", { scenario_id: a.id, account: eur.id, label: "Alquiler A", amount: "-200", start_month: "2026-10", cadence: "monthly" });
+    await s.agent("add_scenario_line", { scenario_id: b.id, account: eur.id, label: "Alquiler B", amount: "-150", start_month: "2026-10", cadence: "monthly" });
+    await s.agent("add_scenario_line", { scenario_id: b.id, account: usd.id, label: "Viaje", amount: "-80", start_month: "2026-11", cadence: "once" });
+    const out = await s.agent("compare_cash_forecasts", { scenario_id: a.id, comparison_id: b.id, from: "2026-10", months: 3 });
+    assert.equal(out.status, 200);
+    assert.equal(out.body.left.lines.length, 1);
+    assert.equal(out.body.right.lines.length, 2);
+    const euros = out.body.rows.map((row) => row.currencies.find((item) => item.currency === "EUR"));
+    assert.deepEqual(euros.map((row) => row.base_balance), [100000, 125000, 125000]);
+    assert.deepEqual(euros.map((row) => row.monthly_difference), [5000, 5000, 5000]);
+    assert.deepEqual(euros.map((row) => row.difference), [5000, 10000, 15000]);
+    assert.deepEqual(out.body.rows.map((row) => row.currencies.find((item) => item.currency === "USD").difference), [0, -8000, -8000]);
+    assert.equal(out.body.rows[1].accounts.find((account) => account.account_id === usd.id).difference, -8000);
+    const recorded = await s.call("GET", `/api/forecast/compare?scenario_id=${b.id}&from=2026-10&months=1`);
+    assert.equal(recorded.body.right, null);
+    assert.equal(recorded.body.rows[0].currencies.find((item) => item.currency === "EUR").difference, 15000);
+    assert.equal((await s.call("GET", "/api/entries")).body.total, 1);
+    assert.equal((await s.call("GET", "/api/forecast/compare?comparison_id=missing")).status, 404);
+  } finally { await s.stop(); }
+});
