@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Page, Section, Empty, ConfirmDialog, useAction, Field } from "../components/ui.jsx";
@@ -39,12 +39,15 @@ function hashFilter() {
 
 /** #/movimientos?tx=<id>: the link another app uses to point at one movement. */
 const hashTx = () => new URLSearchParams(window.location.hash.split("?")[1] || "").get("tx") || "";
+const PAGE_SIZE = 100;
+const EMPTY_RESULT = { items: [], total: 0, nextOffset: null };
 
 export default function Movimientos() {
-  const { accounts, categories, settings, refresh, notify } = useApp();
-  const symbol = settings?.currency_symbol || "€";
+  const { accounts, categories, refresh, notify } = useApp();
   const [filter, setFilter] = useState(() => ({ from: `${thisMonth()}-01`, to: "", account: "", category: "", text: "", ...(hashFilter() || {}) }));
-  const [result, setResult] = useState({ items: [], total: 0 });
+  const [storedResult, setResult] = useState(EMPTY_RESULT);
+  const [request, setRequest] = useState(null);
+  const generation = useRef(0);
   const [draft, setDraft] = useState(() => emptyDraft({ date: today(), account_id: accounts.find((a) => !a.archived)?.id || "" }));
   const [pendingDelete, setPendingDelete] = useState(null);
   const [showTransfer, setShowTransfer] = useState(false);
@@ -52,21 +55,28 @@ export default function Movimientos() {
   const [splitting, setSplitting] = useState(null);
   const [run, busy] = useAction(notify);
   const activeAccounts = accounts.filter((a) => !a.archived);
+  const queryKey = JSON.stringify({ filter, tx });
+  const result = storedResult.key === queryKey ? storedResult : EMPTY_RESULT;
+  const currentRequest = request?.key === queryKey ? request : null;
+  const loading = currentRequest?.loading;
+  const currencyOf = (entry) => accounts.find((a) => a.id === entry?.account_id)?.currency || "Moneda no disponible";
 
-  const load = useCallback(async () => {
+  const fetchPage = useCallback(async (offset = 0, append = false) => {
+    const ticket = ++generation.current;
+    setRequest({ key: queryKey, loading: true, append });
     try {
-      if (tx) {
-        const one = await api.entries.get(tx);
-        setResult({ items: one ? [one] : [], total: one ? 1 : 0 });
-      } else {
-        setResult(await api.entries.list({ ...filter, limit: 300 }));
-      }
+      const one = tx ? await api.entries.get(tx) : null;
+      const page = tx ? { items: one ? [one] : [], total: one ? 1 : 0, nextOffset: null }
+        : await api.entries.list({ ...filter, limit: PAGE_SIZE, offset });
+      if (ticket !== generation.current) return;
+      setResult((previous) => ({ ...page, key: queryKey, items: append && previous.key === queryKey ? [...previous.items, ...page.items] : page.items }));
+      setRequest(null);
     } catch (e) {
-      setResult({ items: [], total: 0 });
-      notify({ kind: "error", text: e.message });
+      if (ticket === generation.current) setRequest({ key: queryKey, loading: false, append, offset, error: e.message });
     }
-  }, [filter, tx, notify]);
-  useEffect(() => { load(); }, [load]);
+  }, [filter, tx, queryKey]);
+  const load = useCallback(() => fetchPage(), [fetchPage]);
+  useEffect(() => { load(); return () => { generation.current++; }; }, [load]);
   useEffect(() => {
     const onHash = () => {
       setTx(hashTx());
@@ -121,7 +131,11 @@ export default function Movimientos() {
   };
   const showAll = () => { setTx(""); window.location.hash = "#/movimientos"; };
 
-  const sum = result.items.reduce((s, e) => s + e.amount_cents, 0);
+  const sums = new Map();
+  for (const entry of result.items) {
+    const currency = currencyOf(entry);
+    sums.set(currency, (sums.get(currency) || 0) + entry.amount_cents);
+  }
 
   return (
     <Page
@@ -150,7 +164,14 @@ export default function Movimientos() {
         </select>
         <input className="field field-sm col-span-2 md:col-span-1" placeholder="Buscar concepto o nota" value={filter.text} onChange={setF("text")} aria-label="Buscar" />
       </div>}
-      <Section aside={<span className="help num">{result.total} movimientos · suma {formatCents(sum, symbol)}</span>} title="Listado">
+      <Section aside={<span className="help num" role="status">Cargados {result.items.length} de {result.total} movimientos</span>} title="Listado">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div className="help">
+            <p>Suma de los cargados: {sums.size ? [...sums].map(([currency, sum]) => <span className="num mr-3 inline-block" key={currency}>{formatCents(sum, currency)}</span>) : "—"}</p>
+            <p>Importes por moneda de la cuenta, sin conversión. Incluye las filas de traspasos cargadas.</p>
+          </div>
+          <button type="button" className="btn btn-sm" onClick={load} disabled={loading || busy}>Actualizar listado</button>
+        </div>
         {!activeAccounts.length ? (
           <Empty text="Necesitas una cuenta antes de apuntar movimientos." action={<a href="#/cuentas" className="btn btn-primary">Crear cuenta</a>} />
         ) : (
@@ -171,19 +192,28 @@ export default function Movimientos() {
                   <EntryFields draft={draft} setDraft={setDraft} accounts={activeAccounts} categories={categories} onSubmit={add} submitLabel="Añadir" busy={busy} />
                 </tr>
                 {result.items.map((e) => (
-                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={symbol} onSave={save} onDelete={setPendingDelete} onSplit={setSplitting} onOpenDoc={openDoc} highlight={!!tx} busy={busy} />
+                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={currencyOf(e)} onSave={save} onDelete={setPendingDelete} onSplit={setSplitting} onOpenDoc={openDoc} highlight={!!tx} busy={busy} />
                 ))}
               </tbody>
             </table>
-            {!result.items.length && <p className="help p-4 text-center">No hay movimientos con estos filtros.</p>}
+            {!result.items.length && !loading && !currentRequest?.error && <p className="help p-4 text-center">No hay movimientos con estos filtros.</p>}
           </div>
         )}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-3">
+          <div className="help" aria-live="polite">
+            {loading ? <p>{currentRequest.append ? "Cargando más movimientos…" : "Cargando listado…"}</p> : <p>{result.nextOffset !== null ? "Puedes continuar con los siguientes movimientos." : result.items.length ? "Has llegado al final del listado cargado." : ""}</p>}
+            {!tx && <p>Si se añaden o borran movimientos mientras cargas páginas, actualiza para empezar de nuevo.</p>}
+            {currentRequest?.error && <p role="alert">No se pudo cargar el listado: {currentRequest.error}</p>}
+          </div>
+          {currentRequest?.error ? <button type="button" className="btn" onClick={() => fetchPage(currentRequest.offset, currentRequest.append)} disabled={busy}>Reintentar</button>
+            : !tx && result.nextOffset !== null && <button type="button" className="btn" onClick={() => fetchPage(result.nextOffset, true)} disabled={loading || busy}>Cargar más movimientos</button>}
+        </div>
       </Section>
-      <SplitDialog entry={splitting} symbol={symbol} run={run} busy={busy} onClose={() => setSplitting(null)} onDone={(out) => { if (out) setSplitting(null); load(); }} />
+      <SplitDialog entry={splitting} symbol={currencyOf(splitting)} run={run} busy={busy} onClose={() => setSplitting(null)} onDone={(out) => { if (out) setSplitting(null); load(); }} />
       <ConfirmDialog
         open={!!pendingDelete}
         title="Borrar movimiento"
-        text={pendingDelete ? `${pendingDelete.counterparty || "Sin concepto"} · ${formatCents(pendingDelete.amount_cents, symbol)}${pendingDelete.transfer_id ? " (se borran las dos mitades del traspaso)" : ""}. Esta acción no se puede deshacer.` : ""}
+        text={pendingDelete ? `${pendingDelete.counterparty || "Sin concepto"} · ${formatCents(pendingDelete.amount_cents, currencyOf(pendingDelete))}${pendingDelete.transfer_id ? " (se borran las dos mitades del traspaso)" : ""}. Esta acción no se puede deshacer.` : ""}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
       />
