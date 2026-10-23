@@ -149,3 +149,20 @@ test("dated account balances share the native inclusive calculation without chan
   assert.deepEqual((await s.call("GET", "/api/accounts")).body, before);
   assert.deepEqual((await s.call("GET", "/api/entries?limit=500")).body, history);
 });
+
+test("tag-only patch keeps literal strings, other entry fields and native search", async () => {
+  const account = (await s.call("POST", "/api/accounts", { name: "Tags ficticios" })).body;
+  const created = (await s.call("POST", "/api/entries", { date: "2026-10-01", account_id: account.id, amount_cents: -4500,
+    counterparty: "Hotel ficticio", note: "Nota intacta", tags: ["correo", "Viaje 2026"] })).body;
+  const patch = await s.call("PATCH", `/api/entries/${created.id}`, { tags: ["Viaje 2026", "hotel, tren", "#literal", "Viaje 2026"] });
+  assert.equal(patch.status, 200);
+  assert.deepEqual(patch.body.tags, ["Viaje 2026", "hotel, tren", "#literal", "Viaje 2026"]);
+  const { tags, updated_at, ...rest } = patch.body;
+  const { tags: oldTags, updated_at: oldDate, ...original } = created;
+  assert.deepEqual(rest, original);
+  assert.equal((await s.call("GET", "/api/entries?text=hotel%2C%20tren")).body.items[0].id, created.id);
+  const native = await s.agent("update_entry", { id: created.id, tags: [] });
+  assert.equal(native.status, 200);
+  assert.deepEqual((await s.call("GET", `/api/entries/${created.id}`)).body.tags, []);
+  assert.deepEqual((await s.call("GET", `/api/entries/${created.id}`)).body.note, "Nota intacta");
+});

@@ -1,5 +1,14 @@
 # Ledger's Hoard
 
+**Entries → Tags** displays saved tags and lets you add or remove whole strings
+in a small dialog. Commas, spaces and # are literal, with no splitting. Save
+includes the new-text field and patches only `tags`, preserving order and repeats;
+the native core trims outer whitespace and validates up to 20 strings of 40 characters.
+Errors and later edits preserve the draft; closing cannot cancel a submitted write.
+Transfer tags remain read-only. Search also checks tags using the existing textual
+matching, not an exact-tag filter. Existing API/MCP (49 tools) and `update_entry {id,tags}`
+remain unchanged; no global tag catalog or note rewriting.
+
 **Entries → Find payment** looks up recorded expenses by exact amount within five
 days either side of a date, with optional merchant and currency. Native matches
 retain their score and link to the original entry. Merchant affects ranking,

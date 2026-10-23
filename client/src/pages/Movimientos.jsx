@@ -5,6 +5,7 @@ import { Page, Section, Empty, ConfirmDialog, useAction, Field } from "../compon
 import { EntryRow, EntryFields, EntryForm, emptyDraft } from "../components/EntryRow.jsx";
 import SplitDialog from "../components/SplitDialog.jsx";
 import PaymentLookup from "../components/PaymentLookup.jsx";
+import EntryTagsDialog from "../components/EntryTagsDialog.jsx";
 import { formatCents, today, thisMonth } from "../format.js";
 import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
@@ -54,6 +55,7 @@ export default function Movimientos() {
   const [showTransfer, setShowTransfer] = useState(false);
   const [tx, setTx] = useState(hashTx);
   const [splitting, setSplitting] = useState(null);
+  const [tagging, setTagging] = useState(null);
   const [run, busy] = useAction(notify);
   const activeAccounts = accounts.filter((a) => !a.archived);
   const queryKey = JSON.stringify({ filter, tx });
@@ -77,6 +79,8 @@ export default function Movimientos() {
     }
   }, [filter, tx, queryKey]);
   const load = useCallback(() => fetchPage(), [fetchPage]);
+  const tagsRefresh = useRef(load);
+  tagsRefresh.current = load;
   useEffect(() => { load(); return () => { generation.current++; }; }, [load]);
   useEffect(() => {
     const onHash = () => {
@@ -164,7 +168,7 @@ export default function Movimientos() {
           <option value="none">Sin categoría</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <input className="field field-sm col-span-2 md:col-span-1" placeholder="Buscar concepto o nota" value={filter.text} onChange={setF("text")} aria-label="Buscar" />
+        <input className="field field-sm col-span-2 md:col-span-1" placeholder="Buscar concepto, nota o etiqueta" value={filter.text} onChange={setF("text")} aria-label="Buscar" />
       </div>}
       <Section aside={<span className="help num" role="status">Cargados {result.items.length} de {result.total} movimientos</span>} title="Listado">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
@@ -181,10 +185,10 @@ export default function Movimientos() {
             <div className="mb-3 px-2 md:hidden">
               <EntryForm draft={draft} setDraft={setDraft} accounts={activeAccounts} categories={categories} onSubmit={add} submitLabel="Añadir" busy={busy} />
             </div>
-            <table className="table table-fixed min-w-[760px]">
+            <table className="table table-fixed min-w-[980px]">
               <colgroup>
                 <col className="w-[138px]" /><col className="w-[92px]" /><col className="w-[132px]" /><col className="w-[144px]" /><col />
-                <col className="hidden lg:table-column" /><col className="w-[232px]" />
+                <col className="hidden lg:table-column" /><col className="w-[310px]" />
               </colgroup>
               <thead>
                 <tr><th>Fecha</th><th>Importe</th><th>Cuenta</th><th>Categoría</th><th>Concepto</th><th className="hidden lg:table-cell">Nota</th><th></th></tr>
@@ -194,7 +198,7 @@ export default function Movimientos() {
                   <EntryFields draft={draft} setDraft={setDraft} accounts={activeAccounts} categories={categories} onSubmit={add} submitLabel="Añadir" busy={busy} />
                 </tr>
                 {result.items.map((e) => (
-                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={currencyOf(e)} onSave={save} onDelete={setPendingDelete} onSplit={setSplitting} onOpenDoc={openDoc} highlight={!!tx} busy={busy} />
+                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={currencyOf(e)} onSave={save} onDelete={setPendingDelete} onSplit={setSplitting} onTags={setTagging} onOpenDoc={openDoc} highlight={!!tx} busy={busy} />
                 ))}
               </tbody>
             </table>
@@ -212,6 +216,7 @@ export default function Movimientos() {
         </div>
       </Section>
       <SplitDialog entry={splitting} symbol={currencyOf(splitting)} run={run} busy={busy} onClose={() => setSplitting(null)} onDone={(out) => { if (out) setSplitting(null); load(); }} />
+      {tagging && <EntryTagsDialog key={tagging.id} entry={result.items.find((entry) => entry.id === tagging.id) || tagging} currency={currencyOf(tagging)} onClose={() => setTagging(null)} onSaved={() => { tagsRefresh.current(); refresh(); }} />}
       <ConfirmDialog
         open={!!pendingDelete}
         title="Borrar movimiento"

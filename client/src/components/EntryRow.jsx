@@ -70,7 +70,7 @@ export function draftFromEntry(e) {
 }
 
 /** One entry: read-only row that switches to the inline editor. */
-export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete, onSplit, onOpenDoc, highlight, busy }) {
+export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete, onSplit, onTags, onOpenDoc, highlight, busy }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => draftFromEntry(entry));
   const [base, setBase] = useState(null);   // the entry as it was when editing began: only fields the user changed are saved
@@ -106,14 +106,18 @@ export function EntryRow({ entry, accounts, categories, symbol, onSave, onDelete
       <td className={`num whitespace-nowrap font-semibold ${entry.amount_cents < 0 ? "expense" : "income"}`}>{formatCents(entry.amount_cents, symbol)}</td>
       <td>{entry.account_name}</td>
       <td>{isTransfer ? <span className="chip">Traspaso</span> : entry.category_name || <span className="help">—</span>}</td>
-      <td className="truncate" title={entry.counterparty}>{entry.counterparty || <span className="help">(sin concepto)</span>}
+      <td><div className="truncate" title={entry.counterparty}>{entry.counterparty || <span className="help">(sin concepto)</span>}
         {entry.source !== "manual" && <span className="chip ml-2">{entry.source === "agent" ? "asistente" : entry.source === "mail" ? "correo" : "importado"}</span>}
         {(entry.docs || []).map((d) => (
           <button key={d.ref} type="button" className="chip chip-income ml-2" title={`Abrir ${d.ref}`} onClick={() => onOpenDoc && onOpenDoc(d)}>{d.label || "Documento"}</button>
-        ))}
+        ))}</div>
+        {entry.tags?.length > 0 && <div className="mt-1 flex flex-wrap gap-1" aria-label="Etiquetas guardadas">
+          {entry.tags.map((tag, index) => <span key={index} className="chip max-w-full break-words whitespace-normal">{tag}</span>)}
+        </div>}
       </td>
       <td className="hidden truncate lg:table-cell" title={entry.note}>{entry.note}</td>
       <td className="whitespace-nowrap">
+        {onTags && !isTransfer && <button type="button" className="btn btn-sm mr-1" onClick={() => onTags(entry)}>Etiquetas</button>}
         {onSplit && entry.amount_cents < 0 && !isTransfer && <button type="button" className="btn btn-sm mr-1" onClick={() => onSplit(entry)} title="Repartir este gasto con otras personas">Repartir</button>}
         <button type="button" className="btn btn-sm" onClick={start} disabled={isTransfer} title={isTransfer ? "Los traspasos se borran y se vuelven a crear" : "Editar"}>Editar</button>
         <button type="button" className="btn btn-danger btn-sm ml-1" onClick={() => onDelete(entry)}>Borrar</button>

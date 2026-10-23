@@ -1,5 +1,14 @@
 # Ledger's Hoard
 
+**Movimientos → Etiquetas** muestra las etiquetas guardadas y permite añadir o
+quitar textos completos en un diálogo. Comas, espacios y # son literales, sin
+dividirlos: Guardar incluye también el campo nuevo y envía sólo `tags`. Mantiene
+orden y repetidos; el core recorta extremos y valida hasta 20 textos de 40 caracteres.
+Errores y ediciones posteriores conservan el borrador; cerrar no cancela una
+escritura ya enviada. Los traspasos muestran sus etiquetas sin editarlas. Buscar
+también consulta etiquetas mediante la búsqueda textual nativa, sin filtro exacto.
+API/MCP (49 herramientas) y `update_entry {id,tags}` existentes, sin catálogo global ni cambios en notas.
+
 **Movimientos → Buscar pago** consulta gastos registrados del mismo importe entre
 cinco días antes y cinco después de una fecha, con comercio y moneda opcionales.
 Conserva la puntuación nativa y permite abrir el movimiento original. El comercio
