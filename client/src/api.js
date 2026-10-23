@@ -20,6 +20,7 @@ export const api = {
   state: () => request("GET", "/api/state"),
   settings: (patch) => request("PUT", "/api/settings", patch),
   accounts: {
+    balances: (at) => request("GET", `/api/accounts/balances${qs({ at })}`),
     create: (data) => request("POST", "/api/accounts", data),
     update: (id, data) => request("PATCH", `/api/accounts/${id}`, data),
     remove: (id) => request("DELETE", `/api/accounts/${id}`),

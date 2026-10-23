@@ -15,6 +15,7 @@ test("health and state bootstrap", async () => {
   const state = await s.call("GET", "/api/state");
   assert.equal(state.status, 200);
   assert.equal(state.body.accounts.length, 0);
+  assert.deepEqual((await s.call("GET", "/api/accounts/balances?at=2026-09-30")).body, { at: "2026-09-30", accounts: [] });
   assert.ok(state.body.categories.some((c) => c.name === "Comida"), "seeded categories present");
   assert.equal(state.body.settings.currency_symbol, "€");
   assert.equal(state.body.dataDir, s.dataDir);
@@ -120,4 +121,31 @@ test("unknown API routes and bad JSON answer with { error }", async () => {
   const response = await fetch(`${s.base}/api/entries`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{oops" });
   assert.equal(response.status, 400);
   assert.ok((await response.json()).error);
+});
+
+test("dated account balances share the native inclusive calculation without changing current balances", async () => {
+  const eur = (await s.call("POST", "/api/accounts", { name: "Consulta EUR", currency: "EUR", opening_balance: 10000 })).body;
+  const usd = (await s.call("POST", "/api/accounts", { name: "Consulta USD", currency: "USD", opening_balance: 5000 })).body;
+  const archived = (await s.call("POST", "/api/accounts", { name: "Consulta archivada", archived: true, opening_balance: 2500 })).body;
+  for (const [date, amount_cents] of [["2026-09-28", -1250], ["2026-09-30", 3000], ["2026-10-01", -9999]]) {
+    await s.call("POST", "/api/entries", { date, amount_cents, account_id: eur.id });
+  }
+  await s.call("POST", "/api/entries", { date: "2026-09-30", amount_cents: -500, account_id: usd.id });
+  const before = (await s.call("GET", "/api/accounts")).body;
+  const history = (await s.call("GET", "/api/entries?limit=500")).body;
+  const result = await s.call("GET", "/api/accounts/balances?at=30%2F09%2F2026");
+  assert.equal(result.status, 200);
+  assert.equal(result.body.at, "2026-09-30");
+  assert.equal(result.body.accounts.find(a => a.id === eur.id).balance, 11750);
+  assert.equal(result.body.accounts.find(a => a.id === usd.id).balance, 4500);
+  assert.equal(result.body.accounts.find(a => a.id === archived.id).balance, 2500);
+  assert.equal(result.body.accounts.find(a => a.id === archived.id).archived, true);
+  const native = await s.agent("balance", { at: result.body.at });
+  assert.deepEqual(native.body.accounts.map(({ balance_text, ...a }) => a), result.body.accounts);
+  const earlier = await s.call("GET", "/api/accounts/balances?at=2026-09-01");
+  assert.equal(earlier.body.accounts.find(a => a.id === eur.id).balance, 10000);
+  assert.equal((await s.call("GET", "/api/accounts/balances?at=2026-02-30")).status, 400);
+  assert.equal((await s.call("GET", "/api/accounts/balances")).status, 200);
+  assert.deepEqual((await s.call("GET", "/api/accounts")).body, before);
+  assert.deepEqual((await s.call("GET", "/api/entries?limit=500")).body, history);
 });

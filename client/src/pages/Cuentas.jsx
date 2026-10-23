@@ -5,6 +5,7 @@ import { Page, Section, Empty, Field, useAction, ConfirmDialog } from "../compon
 import { formatCents, centsToText, parseAmount, ACCOUNT_TYPES } from "../format.js";
 import { changedFields, rebaseForm } from "../copilot-context.js";
 import { useCopilotContext } from "../copilot-hooks.js";
+import AccountBalanceSnapshot from "../components/AccountBalanceSnapshot.jsx";
 
 const blank = { name: "", type: "bank", currency: "EUR", opening_balance: "0" };
 
@@ -101,6 +102,7 @@ export default function Cuentas() {
 
   return (
     <Page title="Cuentas" description="Efectivo, banco, tarjetas y ahorro. El saldo suma el saldo inicial y todos los movimientos." actions={!creating && <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>Nueva cuenta</button>}>
+      <AccountBalanceSnapshot />
       {creating && <div className="mb-4"><AccountForm initial={blank} onSubmit={create} onCancel={accounts.length ? () => setCreating(false) : null} busy={busy} submitLabel="Crear cuenta" /></div>}
       <Section title="Activas">
         {active.length ? <ul className="divide-y" style={{ borderColor: "var(--line)" }}>{active.map(row)}</ul> : <Empty text="Crea tu primera cuenta para empezar a apuntar." action={!creating && <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>Nueva cuenta</button>} />}

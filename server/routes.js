@@ -10,7 +10,7 @@ import { recurringCandidates } from "./recurring.js";
 import { spendingAnomalies } from "./anomalies.js";
 import { previewImport, commitImport, listImports } from "./imports.js";
 import { parseAmount } from "./money.js";
-import { thisMonth, isMonth, addMonths } from "./dates.js";
+import { thisMonth, isMonth, addMonths, parseDate, today } from "./dates.js";
 import { getSetting, setSetting, dataDir } from "./db.js";
 import { manifest, serviceWorker } from "./manifest.js";
 import * as family from "./hoard-link.js";
@@ -58,6 +58,11 @@ export function installRoutes(app, { version, dataDirConfigured }) {
 
   // Accounts
   app.get("/api/accounts", (req, res) => res.json(accounts.accountBalances()));
+  app.get("/api/accounts/balances", (req, res) => {
+    const at = req.query.at ? parseDate(req.query.at) : today();
+    if (!at) return res.status(400).json({ error: "Fecha de corte no válida." });
+    res.json({ at, accounts: accounts.accountBalances(at) });
+  });
   app.post("/api/accounts", (req, res) => res.status(201).json(accounts.createAccount(req.body || {})));
   app.patch("/api/accounts/:id", (req, res) => {
     const out = accounts.updateAccount(req.params.id, req.body || {});

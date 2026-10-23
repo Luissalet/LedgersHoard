@@ -1,5 +1,7 @@
 # Ledger's Hoard
 
+**Cuentas → Consultar saldo a una fecha** muestra el saldo inicial guardado más los movimientos hasta el corte incluido, por cuenta y moneda. Incluye las cuentas archivadas con su estado actual; no reconstruye cambios históricos del saldo inicial ni del archivado. Identifica la fecha aplicada, limpia el resultado anterior al cambiar el corte y conserva la fecha ante error o refresco de datos. `GET /api/accounts/balances?at=YYYY-MM-DD` devuelve `{at, accounts}` mediante `accountBalances(at)`, el mismo cálculo nativo de `balance` MCP; `/api/accounts` conserva su respuesta actual.
+
 Libro de cuentas doméstico local: cuentas, movimientos por categoría, presupuestos mensuales, informes, importación de extractos CSV del banco y pagos leídos del correo. Todo se guarda en un único archivo SQLite en vuestro ordenador y se expone a un asistente mediante MCP.
 
 English version: [`README.md`](README.md).
