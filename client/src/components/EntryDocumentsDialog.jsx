@@ -6,13 +6,14 @@ import { rebaseForm } from "../copilot-context.js";
 import { Field } from "./ui.jsx";
 
 export default function EntryDocumentsDialog({ entry, currency, onClose, onSaved }) {
-  const dialog = useRef(null), alive = useRef(false), version = useRef(0);
+  const dialog = useRef(null), alive = useRef(false), version = useRef(0), currentRef = useRef("");
   const [docs, setDocs] = useState(entry.docs || []);
   const [ref, setRef] = useState("");
   const [label, setLabel] = useState("");
   const [fixedRef, setFixedRef] = useState(null);
   const [baseline, setBaseline] = useState({ ref: "", label: "" });
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(null);
+  currentRef.current = ref;
   const savedKey = JSON.stringify(entry.docs || []);
   const dirty = ref !== baseline.ref || label !== baseline.label;
   useEffect(() => {
@@ -36,6 +37,7 @@ export default function EntryDocumentsDialog({ entry, currency, onClose, onSaved
 
   const edit = () => { version.current++; setMessage(null); };
   const choose = (doc) => {
+    currentRef.current = doc?.ref || "";
     edit(); setFixedRef(doc?.ref || null); setRef(doc?.ref || ""); setLabel(doc?.label || "");
     setBaseline({ ref: doc?.ref || "", label: doc?.label || "" });
   };
@@ -46,6 +48,10 @@ export default function EntryDocumentsDialog({ entry, currency, onClose, onSaved
     setBusy(true); setMessage(null);
     try {
       const result = await api.entries.addDoc(entry.id, ref, label);
+      // Rebase against what was saved, including a later edit back to the old value.
+      if (alive.current && currentRef.current.trim() === result.doc.ref) {
+        setBaseline({ ref: result.doc.ref, label: result.doc.label });
+      }
       // A committed write still refreshes the current listing when this dialog was closed.
       onSaved(result);
       if (!alive.current) return;
@@ -77,13 +83,13 @@ export default function EntryDocumentsDialog({ entry, currency, onClose, onSaved
     <form onSubmit={save} className="mt-4 space-y-3">
       <Field label="Referencia del documento" help={fixedRef ? "La referencia queda fija al cambiar su etiqueta. Para añadir otra, usa Nuevo vínculo." : "Formato hoard://app/tipo/id. Hasta 400 caracteres, sin espacios."}>
         <input className="field min-w-0" value={ref} readOnly={fixedRef !== null} maxLength={400} required autoFocus
-          placeholder="hoard://kafka/document/id" onChange={event => { edit(); setRef(event.target.value); }} />
+          placeholder="hoard://kafka/document/id" onChange={event => { edit(); currentRef.current = event.target.value; setRef(event.target.value); }} />
       </Field>
       <Field label="Etiqueta (opcional)" help="Hasta 160 caracteres. Vacía conserva la etiqueta anterior si la referencia ya existe.">
         <input className="field min-w-0" value={label} maxLength={160} onChange={event => { edit(); setLabel(event.target.value); }} />
       </Field>
       {message && <p className={`text-[13px] [overflow-wrap:anywhere] ${message.error ? "expense" : "help"}`} role={message.error ? "alert" : "status"}>{message.text}</p>}
-      <div className="flex flex-wrap justify-end gap-2 pt-2">
+      <div className="flex flex-wrap justify-end gap-2 pt-2 pb-14 sm:pb-0">
         <button type="button" className="btn" onClick={() => choose(null)}>Nuevo vínculo</button>
         <button type="button" className="btn" onClick={() => dialog.current?.close()}>Cerrar</button>
         <button type="submit" className="btn btn-primary" disabled={busy || !ref.trim() || !dirty}>{busy ? "Guardando referencia…" : "Guardar referencia"}</button>
