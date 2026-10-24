@@ -95,6 +95,7 @@ export async function buildContext({ hash, editors = [], view: viewInfo = {}, ge
   const category = async (id) => (await stateOnce()).categories?.find((c) => c.id === id);
 
   const view = { page };
+  if (page === "reports" && viewInfo.report_evidence) view.report_evidence = { ...viewInfo.report_evidence };
   const month = viewInfo.month;
   if (month && ["summary", "reports", "mail"].includes(page)) {
     view.month = month;

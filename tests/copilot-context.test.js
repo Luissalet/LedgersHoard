@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildContext, changedFields, collectContext, installCopilot, parseRoute, rebaseForm, registerProvider, subscribeRefresh,
+  buildContext, changedFields, collectContext, context, installCopilot, parseRoute, rebaseForm, registerProvider, subscribeRefresh,
 } from "../client/src/copilot-context.js";
 
 const state = {
@@ -38,6 +38,26 @@ test("a reload keeps what the user typed and updates the rest", () => {
 test("route parsing defaults to the summary", () => {
   assert.equal(parseRoute("").page, "resumen");
   assert.equal(parseRoute("#/movimientos?tx=e1").query.get("tx"), "e1");
+});
+
+test("final reports context preserves loading error and ready evidence metadata from its registered provider", async () => {
+  const previousWindow=globalThis.window,previousFetch=globalThis.fetch;
+  const target=new EventTarget();target.location={hash:"#/informes"};
+  let evidence;
+  const off=registerProvider(()=>({view:{month:"2026-09",report_evidence:evidence}}),target);
+  globalThis.window=target;
+  globalThis.fetch=async()=>({ok:true,json:async()=>null});
+  try {
+    for(const state of ["loading","error","ready"]){
+      evidence={requested_month:"2026-09",applied_month:state==="ready"?"2026-09":null,state};
+      const actual=await context();
+      assert.equal(actual.view.page,"reports");
+      assert.equal(actual.view.month,"2026-09");
+      assert.deepEqual(actual.view.report_evidence,evidence);
+    }
+    const other=await buildContext({...deps,hash:"#/resumen",view:{month:"2026-09",report_evidence:evidence}});
+    assert.equal(other.view.report_evidence,undefined);
+  } finally {off();globalThis.window=previousWindow;globalThis.fetch=previousFetch;}
 });
 
 test("entry view returns the real movement, its filters and the open editor", async () => {
