@@ -1,5 +1,12 @@
 # Ledger's Hoard
 
+**Informes → Ver movimientos** abre cada apunte usado como evidencia de un aviso
+o candidato periódico por su ID original. «Abrir cobro señalado» abre también el
+cobro del aviso, aunque no figure entre sus antecedentes. Conserva el orden y la
+moneda nativos; cambiar mes retira la evidencia anterior mientras carga o falla,
+con reintento explícito. Sólo navega: no confirma errores, pagos o suscripciones,
+ni modifica registros. API/MCP49 y los cálculos existentes se mantienen.
+
 **Movimientos → Etiquetas** muestra las etiquetas guardadas y permite añadir o
 quitar textos completos en un diálogo. Comas, espacios y # son literales, sin
 dividirlos: Guardar incluye también el campo nuevo y envía sólo `tags`. Mantiene

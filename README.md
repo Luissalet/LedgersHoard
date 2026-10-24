@@ -1,5 +1,13 @@
 # Ledger's Hoard
 
+**Reports → View movements** opens each recorded movement behind an anomaly or
+recurring candidate by its original ID. A separate action opens the flagged
+charge even when it is absent from the earlier evidence. Native order and
+currency remain intact; changing month hides previous evidence while loading
+or after an error and offers a retry. Navigation never confirms a billing
+error, payment or subscription and does not change records. API/MCP49 and the
+existing calculations are unchanged.
+
 **Entries → Tags** displays saved tags and lets you add or remove whole strings
 in a small dialog. Commas, spaces and # are literal, with no splitting. Save
 includes the new-text field and patches only `tags`, preserving order and repeats;
