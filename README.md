@@ -1,5 +1,11 @@
 # Ledger's Hoard
 
+Entries offers a separate partial-tag filter alongside the general search. It
+searches saved tags without matching notes or counterparties, combines with the
+other filters, and can be cleared independently. Native SQL LIKE semantics
+remain: `%` matches multiple characters and `_` one. This is not exact tag
+membership. Existing pagination and loaded totals by currency remain unchanged.
+
 **Reports → View movements** opens each recorded movement behind an anomaly or
 recurring candidate by its original ID. A separate action opens the flagged
 charge even when it is absent from the earlier evidence. Native order and

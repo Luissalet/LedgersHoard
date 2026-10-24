@@ -104,6 +104,7 @@ export async function buildContext({ hash, editors = [], view: viewInfo = {}, ge
   }
 
   if (page === "entries") {
+    if (viewInfo.listing) view.listing = { ...viewInfo.listing };
     const tx = realId(route.query.get("tx") || viewInfo.tx);
     if (tx) {
       const entry = await safe(() => getEntry(tx));

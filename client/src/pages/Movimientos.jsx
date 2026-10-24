@@ -35,7 +35,7 @@ function hashFilter() {
   if (!query) return null;
   const params = new URLSearchParams(query);
   const out = {};
-  for (const k of ["from", "to", "account", "category", "text"]) if (params.has(k)) out[k] = params.get(k);
+  for (const k of ["from", "to", "account", "category", "text", "tag"]) if (params.has(k)) out[k] = params.get(k);
   return Object.keys(out).length ? out : null;
 }
 
@@ -43,10 +43,12 @@ function hashFilter() {
 const hashTx = () => new URLSearchParams(window.location.hash.split("?")[1] || "").get("tx") || "";
 const PAGE_SIZE = 100;
 const EMPTY_RESULT = { items: [], total: 0, nextOffset: null };
+const appliedFilters = (filter) => Object.fromEntries(Object.entries(filter)
+  .map(([key, value]) => [key, key === "tag" || key === "text" ? value.trim() : value]).filter(([, value]) => value));
 
 export default function Movimientos() {
   const { accounts, categories, refresh, notify } = useApp();
-  const [filter, setFilter] = useState(() => ({ from: `${thisMonth()}-01`, to: "", account: "", category: "", text: "", ...(hashFilter() || {}) }));
+  const [filter, setFilter] = useState(() => ({ from: `${thisMonth()}-01`, to: "", account: "", category: "", text: "", tag: "", ...(hashFilter() || {}) }));
   const [storedResult, setResult] = useState(EMPTY_RESULT);
   const [request, setRequest] = useState(null);
   const generation = useRef(0);
@@ -72,7 +74,7 @@ export default function Movimientos() {
       const page = tx ? { items: one ? [one] : [], total: one ? 1 : 0, nextOffset: null }
         : await api.entries.list({ ...filter, limit: PAGE_SIZE, offset });
       if (ticket !== generation.current) return;
-      setResult((previous) => ({ ...page, key: queryKey, items: append && previous.key === queryKey ? [...previous.items, ...page.items] : page.items }));
+      setResult((previous) => ({ ...page, key: queryKey, filters: tx ? null : appliedFilters(filter), items: append && previous.key === queryKey ? [...previous.items, ...page.items] : page.items }));
       setRequest(null);
     } catch (e) {
       if (ticket === generation.current) setRequest({ key: queryKey, loading: false, append, offset, error: e.message });
@@ -86,7 +88,7 @@ export default function Movimientos() {
     const onHash = () => {
       setTx(hashTx());
       const f = hashFilter();
-      if (f) setFilter((cur) => ({ ...cur, to: "", text: "", ...f }));
+      if (f) setFilter((cur) => ({ ...cur, to: "", text: "", tag: "", ...f }));
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -98,7 +100,11 @@ export default function Movimientos() {
     const filters = Object.fromEntries(Object.entries(filter).filter(([, v]) => v));
     const typed = !!(draft.amount.trim() || draft.counterparty.trim() || draft.note.trim());
     return {
-      view: { filters, ...(tx ? { tx } : {}) },
+      view: { filters, ...(tx ? { tx } : {}), listing: {
+        status: loading ? "loading" : currentRequest?.error ? "error" : storedResult.key === queryKey ? "ready" : "pending",
+        applied_filters: result.key === queryKey ? result.filters : null,
+        loaded_ids: result.items.map((entry) => entry.id), total: result.key === queryKey ? result.total : null,
+      } },
       editors: typed ? [{ kind: "entry-new", object_id: null, dirty: true, fields: draft }] : [],
     };
   });
@@ -169,6 +175,17 @@ export default function Movimientos() {
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <input className="field field-sm col-span-2 md:col-span-1" placeholder="Buscar concepto, nota o etiqueta" value={filter.text} onChange={setF("text")} aria-label="Buscar" />
+        <div className="col-span-2 md:col-span-5">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-0 grow sm:max-w-sm" htmlFor="entries-tag-filter">
+              <span className="mb-1 block text-[13px]">Etiquetas (coincidencia parcial)</span>
+              <input id="entries-tag-filter" className="field field-sm w-full" maxLength={40} value={filter.tag}
+                onChange={setF("tag")} aria-describedby="entries-tag-help" placeholder="Por ejemplo: Viaje 2026" />
+            </label>
+            {filter.tag && <button type="button" className="btn btn-sm" onClick={() => setFilter((f) => ({ ...f, tag: "" }))}>Quitar filtro de etiquetas</button>}
+          </div>
+          <p id="entries-tag-help" className="help mt-1">Busca sólo dentro de las etiquetas guardadas, no en notas o conceptos. Es parcial: % admite varios caracteres y _ uno. Se combina con los demás filtros.</p>
+        </div>
       </div>}
       <Section aside={<span className="help num" role="status">Cargados {result.items.length} de {result.total} movimientos</span>} title="Listado">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-2">

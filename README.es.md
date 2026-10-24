@@ -1,5 +1,11 @@
 # Ledger's Hoard
 
+Movimientos incorpora **Etiquetas (coincidencia parcial)** separado de Buscar:
+consulta sólo etiquetas guardadas, sin incluir notas o conceptos, y se combina
+con los demás filtros. Puede quitarse sin borrar los otros criterios. Conserva
+la semántica nativa LIKE: `%` admite varios caracteres y `_` uno; no es igualdad
+de etiqueta. Se mantienen la paginación y las sumas cargadas por moneda.
+
 **Informes → Ver movimientos** abre cada apunte usado como evidencia de un aviso
 o candidato periódico por su ID original. «Abrir cobro señalado» abre también el
 cobro del aviso, aunque no figure entre sus antecedentes. Conserva el orden y la
