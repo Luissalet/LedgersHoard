@@ -283,3 +283,11 @@ tests/    node:test suites
 ```
 
 License: MIT (see `LICENSE`).
+
+## Prepare a similar entry
+
+In Movimientos, **Crear parecido** opens a separate draft from one income or expense entry. It carries the original date, exact amount, account, category, counterparty, note and complete tags. Change the date explicitly when needed; commas/spaces are part of each editable tag. Selected archived accounts/categories remain visible and labelled. Changing account does not convert currencies.
+
+**Añadir movimiento** uses the existing native creation API and assigns a new ID. The new entry is manual, without inherited documents, import origin/hash, paired transfer identity or shared-expense allocations. The original entry and quick-add draft stay intact; opening/cancelling creates no record. Paired transfer rows keep their existing transfer form. This is neither scheduling nor automatic repetition.
+
+Errors retain the fields. Edits made while submitting remain unsent in the dialog with the accepted new ID; the saved entry uses the submitted values. Closing does not cancel an already sent native creation, and a closed instance cannot close a later draft. The incumbent UI is Spanish, usable on desktop and narrow screens. Native API/MCP49, engine and dependencies are unchanged.

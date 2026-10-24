@@ -219,3 +219,11 @@ Las pruebas usan carpetas temporales y nunca tocan `data/`.
 Los módulos de la familia están en `server/family*.js`, `tx-links.js`, `splits.js`, `sales.js`, `outlook.js` y `agenda.js`; las páginas, en `Compartidos.jsx` y la tarjeta de `Resumen.jsx`. Los módulos del correo están en `server/mail-*.js`, `server/subscriptions.js`, `server/notifications.js` y `server/mail/mail_helper.py`; las páginas, en `client/src/pages/Correo.jsx` y `Suscripciones.jsx`.
 
 Licencia: MIT (ver `LICENSE`).
+
+## Preparar un movimiento parecido
+
+En Movimientos, **Crear parecido** abre un borrador independiente desde un ingreso o gasto individual. Copia fecha, importe exacto, cuenta, categoría, concepto, nota y etiquetas completas. La fecha sigue siendo la del original hasta que la cambies. Puedes editar o quitar cada etiqueta; las comas y espacios forman parte del texto. Las cuentas y categorías archivadas seleccionadas se identifican como tales. Cambiar cuenta no convierte el importe entre monedas.
+
+**Añadir movimiento** usa la creación nativa existente y asigna un ID nuevo. El resultado es manual, sin documentos, origen o hash de importación, relación de traspaso ni repartos heredados. El original y el borrador de entrada rápida permanecen intactos; abrir/cancelar no crea registros. La acción no aparece para las mitades de un traspaso, que conserva su formulario propio. No programa pagos ni repite movimientos automáticamente.
+
+Un error conserva los campos. Si escribes mientras se envía, el movimiento guardado usa los campos enviados y el diálogo mantiene los cambios posteriores sin añadir, junto al ID creado. Cerrar no cancela una creación ya enviada; el listado se actualiza cuando se confirma. Una instancia cerrada no cierra otro borrador. Interfaz castellana de escritorio y móvil; API/MCP y sus49 herramientas, motor, dependencias y datos originales se conservan.
