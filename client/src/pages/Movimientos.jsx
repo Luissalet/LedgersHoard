@@ -6,6 +6,7 @@ import { EntryRow, EntryFields, EntryForm, emptyDraft } from "../components/Entr
 import SplitDialog from "../components/SplitDialog.jsx";
 import PaymentLookup from "../components/PaymentLookup.jsx";
 import EntryTagsDialog from "../components/EntryTagsDialog.jsx";
+import EntryDocumentsDialog from "../components/EntryDocumentsDialog.jsx";
 import { formatCents, today, thisMonth } from "../format.js";
 import { useCopilotContext, useCopilotRefresh } from "../copilot-hooks.js";
 
@@ -58,6 +59,7 @@ export default function Movimientos() {
   const [tx, setTx] = useState(hashTx);
   const [splitting, setSplitting] = useState(null);
   const [tagging, setTagging] = useState(null);
+  const [documenting, setDocumenting] = useState(null);
   const [run, busy] = useAction(notify);
   const activeAccounts = accounts.filter((a) => !a.archived);
   const queryKey = JSON.stringify({ filter, tx });
@@ -83,6 +85,8 @@ export default function Movimientos() {
   const load = useCallback(() => fetchPage(), [fetchPage]);
   const tagsRefresh = useRef(load);
   tagsRefresh.current = load;
+  const documentsRefresh = useRef(load);
+  documentsRefresh.current = load;
   useEffect(() => { load(); return () => { generation.current++; }; }, [load]);
   useEffect(() => {
     const onHash = () => {
@@ -215,7 +219,7 @@ export default function Movimientos() {
                   <EntryFields draft={draft} setDraft={setDraft} accounts={activeAccounts} categories={categories} onSubmit={add} submitLabel="Añadir" busy={busy} />
                 </tr>
                 {result.items.map((e) => (
-                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={currencyOf(e)} onSave={save} onDelete={setPendingDelete} onSplit={setSplitting} onTags={setTagging} onOpenDoc={openDoc} highlight={!!tx} busy={busy} />
+                  <EntryRow key={e.id} entry={e} accounts={accounts} categories={categories} symbol={currencyOf(e)} onSave={save} onDelete={setPendingDelete} onSplit={setSplitting} onTags={setTagging} onDocuments={setDocumenting} onOpenDoc={openDoc} highlight={!!tx} busy={busy} />
                 ))}
               </tbody>
             </table>
@@ -234,6 +238,7 @@ export default function Movimientos() {
       </Section>
       <SplitDialog entry={splitting} symbol={currencyOf(splitting)} run={run} busy={busy} onClose={() => setSplitting(null)} onDone={(out) => { if (out) setSplitting(null); load(); }} />
       {tagging && <EntryTagsDialog key={tagging.id} entry={result.items.find((entry) => entry.id === tagging.id) || tagging} currency={currencyOf(tagging)} onClose={() => setTagging(null)} onSaved={() => { tagsRefresh.current(); refresh(); }} />}
+      {documenting && <EntryDocumentsDialog key={documenting.id} entry={result.items.find((entry) => entry.id === documenting.id) || documenting} currency={currencyOf(documenting)} onClose={() => setDocumenting(null)} onSaved={() => { documentsRefresh.current(); refresh(); }} />}
       <ConfirmDialog
         open={!!pendingDelete}
         title="Borrar movimiento"

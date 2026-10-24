@@ -6,7 +6,7 @@ const PAGE_NAMES = {
   resumen: "summary", movimientos: "entries", compartidos: "shared_expenses", cuentas: "accounts", categorias: "categories",
   importar: "import", informes: "reports", prevision: "forecast", correo: "mail", suscripciones: "subscriptions", ajustes: "settings",
 };
-const EDITOR_ORDER = { "entry-tags": 0, "entry-form": 0, "account-form": 0, "subscription-form": 0, "scenario-line-form": 0, "category-name": 0, "category-budget": 0, "settle-form": 0 };
+const EDITOR_ORDER = { "entry-document": 0, "entry-tags": 0, "entry-form": 0, "account-form": 0, "subscription-form": 0, "scenario-line-form": 0, "category-name": 0, "category-budget": 0, "settle-form": 0 };
 const MAX_LINES = 8;
 const EVENT = "ledger:context-request";
 
@@ -67,7 +67,7 @@ export function registerProvider(getter, target = globalThis.window) {
 
 const pick = (source, keys) => Object.fromEntries(keys.filter((k) => source?.[k] !== undefined && source[k] !== null && source[k] !== "").map((k) => [k, source[k]]));
 
-export const entryObject = (e) => ({ kind: "entry", object_id: e.id, title: e.counterparty || "(no description)", ...pick(e, ["date", "amount_cents", "account_name", "category_name", "source", "note", "tags"]), ...(e.transfer_id ? { transfer: true } : {}) });
+export const entryObject = (e) => ({ kind: "entry", object_id: e.id, title: e.counterparty || "(no description)", ...pick(e, ["date", "amount_cents", "account_name", "category_name", "source", "note", "tags", "docs"]), ...(e.transfer_id ? { transfer: true } : {}) });
 export const accountObject = (a) => ({ kind: "account", object_id: a.id, title: a.name, ...pick(a, ["type", "currency", "archived"]), ...(a.balance != null ? { balance_cents: a.balance } : {}), ...(a.opening_balance != null ? { opening_balance_cents: a.opening_balance } : {}) });
 export const categoryObject = (c) => ({ kind: "category", object_id: c.id, title: c.name, ...(c.kind ? { category_kind: c.kind } : {}), ...pick(c, ["parent_id", "archived"]), ...(c.monthly_budget != null ? { monthly_budget_cents: c.monthly_budget } : {}) });
 export const subscriptionObject = (s) => ({ kind: "subscription", object_id: s.id, title: s.merchant, ...pick(s, ["status", "amount_cents", "currency", "period", "next_charge_date", "trial_end_date", "category_id"]) });
@@ -150,7 +150,7 @@ export async function buildContext({ hash, editors = [], view: viewInfo = {}, ge
   for (const e of editors) {
     const id = realId(e.object_id);
     if (!id) continue;
-    if (e.kind === "entry-form" || e.kind === "entry-tags") { const entry = await safe(() => getEntry(id)); if (entry?.id) add(entryObject(entry)); }
+    if (e.kind === "entry-form" || e.kind === "entry-tags" || e.kind === "entry-document") { const entry = await safe(() => getEntry(id)); if (entry?.id) add(entryObject(entry)); }
     else if (e.kind === "account-form") { const row = await account(id); if (row) add(accountObject(row)); }
     else if (e.kind === "category-name" || e.kind === "category-budget") { const row = await category(id); if (row) add(categoryObject(row)); }
     else if (e.kind === "subscription-form") { const row = (await subs()).find((s) => s.id === id); if (row) add(subscriptionObject(row)); }
