@@ -126,6 +126,16 @@ function ReviewItem({ item, accounts, categories, onAccept, onIgnore, onRemove, 
         <div className="num text-[14px] font-semibold">{item.kind === "cancel" ? (item.entry?.amount || "—") : (item.amount || "—")} <span className="help text-[12px] font-normal">{(item.kind === "cancel" ? item.entry?.date : item.date) ? dateLabel(item.kind === "cancel" ? item.entry.date : item.date) : "sin fecha"}</span></div>
       </div>
       {item.review_reasons?.length > 0 && <p className="mt-1 text-[12px]" style={{ color: "var(--warn-ink)" }}>Por qué está aquí: {item.review_reasons.join(" · ")}</p>}
+      {item.possible_duplicates?.length > 0 && (
+        <p className="mt-1 text-[12px]" style={{ color: "var(--warn-ink)" }}>
+          Mismo importe en otro correo por revisar: {item.possible_duplicates.map((d) => `${d.merchant || "?"} (${d.date ? dateLabel(d.date) : "sin fecha"})`).join(", ")}. Puede ser el mismo pago: acepta solo uno.
+        </p>
+      )}
+      {item.possible_entry && (
+        <p className="mt-1 text-[12px]" style={{ color: "var(--warn-ink)" }}>
+          Ya hay un movimiento con ese importe: {item.possible_entry.counterparty || "(sin concepto)"}, {dateLabel(item.possible_entry.date)}{item.possible_entry.account ? `, ${item.possible_entry.account}` : ""}. <a className="btn-link" href={`#/movimientos?tx=${encodeURIComponent(item.possible_entry.id)}`}>Verlo</a>
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-2">
         {item.kind === "cancel" ? (
           <>
@@ -265,7 +275,7 @@ export default function Correo() {
 
           <Section title={`Apuntado desde el correo en ${monthLabel(month)}`} aside={<span className="help num">{recorded.length} {recorded.length === 1 ? "movimiento" : "movimientos"}</span>}>
             {recorded.length ? (
-              <table className="table">
+              <div className="overflow-x-auto"><table className="table">
                 <thead><tr><th>Fecha</th><th>Comercio</th><th className="hidden sm:table-cell">Cuenta</th><th className="hidden sm:table-cell">Categoría</th><th className="r">Importe</th><th /></tr></thead>
                 <tbody>
                   {recorded.map((m) => (
@@ -282,7 +292,7 @@ export default function Correo() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             ) : (
               <Empty text={accountOk ? "Nada apuntado desde el correo este mes. «Leer ahora» busca recibos y cobros recientes." : "Elige una cuenta para los cobros y vuelve a leer el correo."} />
             )}

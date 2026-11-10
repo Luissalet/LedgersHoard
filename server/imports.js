@@ -6,7 +6,9 @@ import { tabulate, guessMapping, mapRows } from "./csv.js";
 import { createEntry, getEntry, hasImportHash } from "./entries.js";
 import { getAccount } from "./accounts.js";
 import { resolveCategory } from "./categories.js";
-import { findMatchingEntry } from "./mail-match.js";
+import { findMatchingEntry, merchantMatches } from "./mail-match.js";
+import { looksLikeOfx, ofxTable, OFX_MAPPING } from "./ofx.js";
+import { addDays } from "./dates.js";
 
 export const mappingSchema = z.object({
   date: z.string().optional(),
@@ -33,14 +35,36 @@ export function importHash(date, amount_cents, description, account_id) {
   return crypto.createHash("sha1").update(`${date}|${amount_cents}|${description}|${account_id}`).digest("hex");
 }
 
-/** Parse the CSV, merge the guessed mapping with the user's and evaluate rows. */
+/**
+ * An entry typed by hand in this account for the same amount within 3 days of the bank row, not yet tied to a bank row
+ * or a mail: the same payment. With several candidates the one whose concept matches wins; still ambiguous, none.
+ */
+export function findManualEntry({ amount_cents, date, account_id, merchant = "", note = "", exclude = [] }) {
+  if (!account_id) return null;
+  const skip = new Set(exclude);
+  const rows = db().prepare(
+    `SELECT id, date, counterparty, note FROM entries
+     WHERE account_id = ? AND amount_cents = ? AND date >= ? AND date <= ? AND transfer_id IS NULL AND import_hash IS NULL AND source = 'manual'
+     ORDER BY date`,
+  ).all(account_id, amount_cents, addDays(date, -3), addDays(date, 3)).filter((r) => !skip.has(r.id));
+  if (rows.length <= 1) return rows[0] || null;
+  const named = rows.filter((r) => [merchant, note].some((t) => t && (merchantMatches(t, r.counterparty) || merchantMatches(r.counterparty, t))));
+  return named.length === 1 ? named[0] : null;
+}
+
+/** Parse the CSV (or OFX/QFX), merge the guessed mapping with the user's and evaluate rows. */
 function analyse({ csv, mapping = {}, account_id = "" }) {
-  const table = tabulate(csv, { delimiter: mapping.delimiter, hasHeader: mapping.hasHeader });
-  const guessed = guessMapping(table.columns, table.data);
+  const ofx = looksLikeOfx(csv);
+  const table = ofx ? ofxTable(csv) : tabulate(csv, { delimiter: mapping.delimiter, hasHeader: mapping.hasHeader });
+  const guessed = ofx ? { ...OFX_MAPPING } : guessMapping(table.columns, table.data);
   const merged = { ...guessed };
-  for (const [k, v] of Object.entries(mapping)) if (v !== undefined && v !== "") merged[k] = v;
-  if (mapping.amount) { delete merged.debit; delete merged.credit; }
-  if (mapping.debit || mapping.credit) delete merged.amount;
+  if (ofx) {
+    if (mapping.invert !== undefined) merged.invert = mapping.invert; // the columns of an OFX are fixed; only the sign can be flipped
+  } else {
+    for (const [k, v] of Object.entries(mapping)) if (v !== undefined && v !== "") merged[k] = v;
+  }
+  if (!ofx && mapping.amount) { delete merged.debit; delete merged.credit; }
+  if (!ofx && (mapping.debit || mapping.credit)) delete merged.amount;
   merged.delimiter = table.delimiter;
   merged.hasHeader = table.hasHeader;
   const rows = mapRows(table.columns, table.data, merged);
@@ -56,7 +80,10 @@ function analyse({ csv, mapping = {}, account_id = "" }) {
     const match = [r.counterparty, r.description].filter(Boolean)
       .map((merchant) => findMatchingEntry({ amount_cents: r.amount_cents, date: r.date, merchant, account_id, mailOnly: true, exclude: [...adopted] }))
       .find(Boolean);
-    if (match) { r.mail_entry_id = match.id; adopted.add(match.id); }
+    if (match) { r.mail_entry_id = match.id; adopted.add(match.id); continue; }
+    // the same payment typed by hand before the statement arrived
+    const manual = findManualEntry({ amount_cents: r.amount_cents, date: r.date, account_id, merchant: r.counterparty, note: r.description, exclude: [...adopted] });
+    if (manual) { r.manual_entry_id = manual.id; adopted.add(manual.id); }
   }
   return { table, mapping: merged, rows };
 }
@@ -66,7 +93,10 @@ export function previewImport(input) {
   const { table, mapping, rows } = analyse(data);
   const valid = rows.filter((r) => !r.error);
   const matched = valid.filter((r) => !r.duplicate && r.mail_entry_id);
+  const manual = valid.filter((r) => !r.duplicate && r.manual_entry_id);
   return {
+    format: table.format || "csv",
+    ...(table.format === "ofx" ? { ofx_currency: table.currency, ofx_account: table.account } : {}),
     delimiter: table.delimiter,
     hasHeader: table.hasHeader,
     columns: table.columns,
@@ -76,8 +106,9 @@ export function previewImport(input) {
     rows_invalid: rows.length - valid.length,
     rows_duplicate: valid.filter((r) => r.duplicate).length,
     rows_matched_mail: matched.length,
-    rows_new: valid.filter((r) => !r.duplicate && !r.mail_entry_id).length,
-    sample: rows.slice(0, 20).map(({ hash, ...r }) => ({ ...r, duplicate: !!r.duplicate, matched_mail: !!r.mail_entry_id })),
+    rows_matched_manual: manual.length,
+    rows_new: valid.filter((r) => !r.duplicate && !r.mail_entry_id && !r.manual_entry_id).length,
+    sample: rows.slice(0, 20).map(({ hash, ...r }) => ({ ...r, duplicate: !!r.duplicate, matched_mail: !!r.mail_entry_id, matched_manual: !!r.manual_entry_id })),
     raw_sample: table.data.slice(0, 5),
   };
 }
@@ -92,10 +123,12 @@ export function commitImport(input) {
     let added = 0, skipped = 0, invalid = 0;
     const entries = [];
     const matchedEntries = [];
+    const manualEntries = [];
     for (const r of rows) {
       if (r.error) { invalid++; continue; }
       if (r.duplicate) { skipped++; continue; }
       if (r.mail_entry_id) { matchedEntries.push(adoptBankRow(r, data.account_id, category_id)); continue; }
+      if (r.manual_entry_id) { manualEntries.push(adoptBankRow({ ...r, mail_entry_id: r.manual_entry_id }, data.account_id, category_id)); continue; }
       entries.push(createEntry({
         date: r.date, amount_cents: r.amount_cents, account_id: data.account_id, category_id,
         counterparty: r.counterparty.slice(0, 200), note: r.note.slice(0, 2000), source: "import", import_hash: r.hash,
@@ -107,8 +140,8 @@ export function commitImport(input) {
       "INSERT INTO imports (id, created_at, filename, rows_total, rows_added, rows_skipped, mapping) VALUES (?, ?, ?, ?, ?, ?, ?)",
     ).run(id, now(), data.filename, rows.length, added, skipped + invalid, JSON.stringify(mapping));
     return {
-      id, rows_total: rows.length, rows_added: added, rows_skipped: skipped, rows_invalid: invalid, matched_mail: matchedEntries.length, mapping,
-      entries: entries.slice(0, 50), matched_entries: matchedEntries.slice(0, 50),
+      id, rows_total: rows.length, rows_added: added, rows_skipped: skipped, rows_invalid: invalid, matched_mail: matchedEntries.length, matched_manual: manualEntries.length, mapping,
+      entries: entries.slice(0, 50), matched_entries: matchedEntries.slice(0, 50), matched_manual_entries: manualEntries.slice(0, 50),
     };
   });
 }

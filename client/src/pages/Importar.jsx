@@ -67,14 +67,14 @@ export default function Importar() {
   };
 
   return (
-    <Page title="Importar extracto" description="Pega el CSV del banco o elige el archivo. Se detectan separador, cabecera, fechas y decimales; ajusta el mapeo si hace falta. Las filas ya importadas se omiten.">
+    <Page title="Importar extracto" description="Pega el CSV del banco o elige el archivo CSV u OFX/QFX. Se detectan separador, cabecera, fechas y decimales; ajusta el mapeo si hace falta. Las filas ya importadas se omiten y los pagos que ya tenías apuntados (del correo o a mano) se casan con su fila del banco en vez de duplicarse.">
       {!active.length ? (
         <Empty text="Necesitas una cuenta a la que importar." action={<a href="#/cuentas" className="btn btn-primary">Crear cuenta</a>} />
       ) : (
         <div className="grid gap-4">
           <Section title="1. Archivo">
             <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr]">
-              <Field label="Archivo CSV"><input type="file" accept=".csv,.txt,text/csv" className="field" onChange={onFile} /></Field>
+              <Field label="Archivo CSV u OFX"><input type="file" accept=".csv,.txt,.ofx,.qfx,text/csv,application/x-ofx" className="field" onChange={onFile} /></Field>
               <Field label="Cuenta de destino">
                 <select className="field" value={accountId} onChange={(e) => { setAccountId(e.target.value); setPreview(null); }}>
                   {active.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -94,8 +94,11 @@ export default function Importar() {
           </Section>
 
           {preview && (
-            <Section title="2. Mapeo y vista previa" aside={<span className="help">separador «{preview.delimiter === "\t" ? "tab" : preview.delimiter}» · {preview.hasHeader ? "con cabecera" : "sin cabecera"}</span>}>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+            <Section title="2. Mapeo y vista previa" aside={<span className="help">{preview.format === "ofx" ? `extracto OFX${preview.ofx_currency ? ` en ${preview.ofx_currency}` : ""}` : <>separador «{preview.delimiter === "\t" ? "tab" : preview.delimiter}» · {preview.hasHeader ? "con cabecera" : "sin cabecera"}</>}</span>}>
+              {preview.format === "ofx" && preview.ofx_currency && accounts.find((a) => a.id === accountId)?.currency !== preview.ofx_currency && (
+                <p className="mb-3 text-[13px]" style={{ color: "var(--warn-ink)" }}>El extracto está en {preview.ofx_currency} y la cuenta elegida en {accounts.find((a) => a.id === accountId)?.currency}. Los importes no se convierten.</p>
+              )}
+              {preview.format !== "ofx" && <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
                 {FIELDS.map(([key, label]) => (
                   <Field key={key} label={label}>
                     <select className="field field-sm" value={mapping[key] || ""} onChange={setMap(key)}>
@@ -110,7 +113,7 @@ export default function Importar() {
                     <option value=".">punto (12.50)</option>
                   </select>
                 </Field>
-              </div>
+              </div>}
               <label className="mt-2 inline-flex items-center gap-2 text-[13px]">
                 <input type="checkbox" checked={!!mapping.invert} onChange={(e) => { const next = { ...mapping, invert: e.target.checked }; setMapping(next); doPreview(next); }} />
                 Invertir signo (el banco muestra los gastos en positivo)
@@ -119,6 +122,8 @@ export default function Importar() {
                 <span className="chip">{preview.rows_total} filas</span>
                 <span className="chip chip-income">{preview.rows_new} nuevas</span>
                 <span className="chip chip-warn">{preview.rows_duplicate} duplicadas</span>
+                {preview.rows_matched_mail > 0 && <span className="chip" title="Pagos ya apuntados desde el correo: se quedan en un solo movimiento con la fecha y el importe del banco">{preview.rows_matched_mail} ya apuntadas desde el correo</span>}
+                {preview.rows_matched_manual > 0 && <span className="chip" title="Movimientos que apuntaste a mano en esta cuenta con el mismo importe y fecha cercana: se casan con la fila del banco">{preview.rows_matched_manual} ya apuntadas a mano</span>}
                 {preview.rows_invalid > 0 && <span className="chip chip-danger">{preview.rows_invalid} no reconocidas</span>}
               </div>
               <div className="-mx-2 mt-3 overflow-x-auto">
@@ -132,7 +137,7 @@ export default function Importar() {
                         <td className={`r num ${r.amount_cents < 0 ? "expense" : "income"}`}>{r.amount_cents != null ? formatCents(r.amount_cents, symbol) : "?"}</td>
                         <td className="max-w-[260px] truncate" title={r.description}>{r.description}</td>
                         <td className="max-w-[180px] truncate">{r.counterparty !== r.description ? r.counterparty : ""}</td>
-                        <td>{r.error ? <span className="chip chip-danger">{r.error}</span> : r.duplicate ? <span className="chip chip-warn">Duplicada</span> : <span className="chip chip-income">Nueva</span>}</td>
+                        <td>{r.error ? <span className="chip chip-danger">{r.error}</span> : r.duplicate ? <span className="chip chip-warn">Duplicada</span> : r.matched_mail ? <span className="chip">Del correo</span> : r.matched_manual ? <span className="chip">Apuntada a mano</span> : <span className="chip chip-income">Nueva</span>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -140,15 +145,17 @@ export default function Importar() {
                 {preview.rows_total > 20 && <p className="help mt-2">Se muestran las 20 primeras filas.</p>}
               </div>
               <div className="mt-4 flex items-center gap-3">
-                <button type="button" className="btn btn-primary" onClick={commit} disabled={busy || preview.rows_new === 0}>Importar {preview.rows_new} movimientos</button>
-                {preview.rows_new === 0 && <span className="help">Nada nuevo que importar.</span>}
+                <button type="button" className="btn btn-primary" onClick={commit} disabled={busy || (preview.rows_new + (preview.rows_matched_mail || 0) + (preview.rows_matched_manual || 0)) === 0}>
+                  {preview.rows_new > 0 ? `Importar ${preview.rows_new} movimientos` : "Casar con lo apuntado"}{(preview.rows_matched_mail || 0) + (preview.rows_matched_manual || 0) > 0 && preview.rows_new > 0 ? ` y casar ${(preview.rows_matched_mail || 0) + (preview.rows_matched_manual || 0)}` : ""}
+                </button>
+                {(preview.rows_new + (preview.rows_matched_mail || 0) + (preview.rows_matched_manual || 0)) === 0 && <span className="help">Nada nuevo que importar.</span>}
               </div>
             </Section>
           )}
 
           {result && (
             <Section title="3. Resultado">
-              <p className="text-[13px]">Añadidos <strong>{result.rows_added}</strong> · omitidos por duplicado <strong>{result.rows_skipped}</strong>{result.rows_invalid > 0 && <> · no reconocidos <strong>{result.rows_invalid}</strong></>}.</p>
+              <p className="text-[13px]">Añadidos <strong>{result.rows_added}</strong> · omitidos por duplicado <strong>{result.rows_skipped}</strong>{result.matched_mail > 0 && <> · casados con el correo <strong>{result.matched_mail}</strong></>}{result.matched_manual > 0 && <> · casados con lo apuntado a mano <strong>{result.matched_manual}</strong></>}{result.rows_invalid > 0 && <> · no reconocidos <strong>{result.rows_invalid}</strong></>}.</p>
               <a href="#/movimientos" className="btn mt-3">Ver movimientos</a>
             </Section>
           )}

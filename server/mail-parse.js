@@ -208,6 +208,7 @@ const SHIPPING_SUBJ = /(enviado|ha salido|en camino|shipped|has shipped|out for 
 // A newsletter footer with nothing that looks like a receipt in the subject means a bulletin, whatever amounts its
 // stories quote («why you won't get a tariff refund», «compra ya por 100 $»).
 const BULLETIN_FOOTER = /(unsubscribe|darte de baja|darse de baja|dejar de recibir|cancelar (la |tu )?suscripcion a (este|nuestro|nuestros) (boletin|correo|newsletter)|ver (este correo|en (el|tu) navegador)|view (this email )?in (your )?browser|you('| a)re receiving this|recibes este (correo|email))/;
+const SALES_SUBJ = /(^|[\s¿¡])(ahorr\w*|oferta\w*|promo\w*|descuento\w*|rebaja\w*|regal\w*|gratis|truco\w*|novedad\w*|mejora tu|pasate a|cambiate|hazte|aprovecha|descubre|no te pierdas|consigue|te esperamos|vuelve)(?=$|[\s!?¡¿.,:])|\?\s*$|^\s*¿/;
 const PROMO_VERB_SUBJ = /^(consigue|descubre|aprovecha|recibe manana|compra ya|disfruta|prueba gratis|hazte con|no te pierdas|ultim[ao]s? (horas|dias|unidades))\b|: compra (ya|inteligente)\b/;
 const CONFIRM_SUBJ = /(confirmacion|confirmation|confirmado|confirmed|recibo|factura|receipt|invoice|pago|payment|compra realizada)/;
 const SUB_WORDS = /(suscripcion|subscription|renovacion|renewal|membresia|membership|mensualidad|cuota (mensual|anual)|plan (premium|mensual|anual|familiar|individual|estandar|basico)|auto-?renew|renovara automaticamente|renovacion automatica|prueba gratuita|free trial)/;
@@ -353,8 +354,21 @@ export function identifyMerchant({ fromName, fromAddress, subject, body, cardNot
 
 /** Order, invoice or receipt number (upper case), or null. Text is accent-folded and lower case. */
 export function findOrderRef(subjectFolded, bodyFolded) {
-  return findFamilyOrderRef(`${subjectFolded}\n${bodyFolded}`) || null;
+  const family = findFamilyOrderRef(`${subjectFolded}\n${bodyFolded}`);
+  if (family) return family;
+  // shapes the family table does not cover: «pedido con número 123456789», «Tu pedido Tienda 123456789»
+  for (const text of [subjectFolded, bodyFolded]) {
+    for (const rx of LOCAL_ORDER_REFS) {
+      const m = rx.exec(text);
+      if (m) return m[1].toUpperCase();
+    }
+  }
+  return null;
 }
+const LOCAL_ORDER_REFS = [
+  /\b(?:pedido|order)\s+con\s+(?:el\s+)?(?:numero|number|n\.?[º°o])\s*:?\s*([0-9][0-9-]{5,24}[0-9])\b/,
+  /\b(?:pedido|order)\s+[a-z][a-z0-9&.'-]{1,24}\s+#?([0-9]{6,20})\b/,
+];
 
 const LAST4 = /(?:tarjeta|card|visa|mastercard|amex|terminada en|ending in|acabada en|finalizada en|\*{2,}|x{3,}|•{2,}|\.{3})\s*(?:[a-z]+\s*){0,2}[*x•.\s-]*(\d{4})\b/i;
 
@@ -486,6 +500,15 @@ export function parseMail(msg, { now = Date.now() } = {}) {
     reasons.push(`importe ${amount.source === "total" ? "total" : amount.source === "verb" ? "del cobro" : amount.source === "subject" ? "del asunto" : amount.source === "single" ? "único" : "indicado"}`);
     if (amount.conflict) reasons.push("hay importes distintos con el mismo peso");
   } else if (kind === "charge" || kind === "refund") reasons.push("no se encuentra el importe");
+
+  // a sales mail that only talks about the bill («¿Ahorrar en tu factura?»): no amount, no order, no payment verb in the subject
+  if (kind === "charge" && !amount && !facts.order_ref && !pastSubject && SALES_SUBJ.test(fs)) {
+    facts.kind = "noise";
+    facts.merchant = null; facts.merchant_key = null; facts.category_hint = null; facts.known = false; facts.subscription = false;
+    reasons.length = 0;
+    reasons.push("correo comercial sin importe ni pedido");
+    return facts;
+  }
 
   if (kind === "refund" && facts.amount_cents == null && !REFUND_SUBJ.test(fs)) {
     facts.kind = "noise";
