@@ -17,6 +17,7 @@ try {
     createApp: () => {
       const made = createApp({
         dataDir, dataDirConfigured: !!process.env.LEDGER_DATA_DIR, startScheduler: process.env.LEDGER_MAIL_SCHEDULER !== "0",
+        startAlerts: process.env.LEDGER_ALERTS !== "0",
       });
       scheduler = made.scheduler;
       return made.app;

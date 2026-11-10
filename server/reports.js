@@ -2,7 +2,7 @@
 import { db } from "./db.js";
 import { listCategories } from "./categories.js";
 import { accountBalances } from "./accounts.js";
-import { monthRange, monthsBetween, thisMonth } from "./dates.js";
+import { monthRange, monthsBetween, thisMonth, addMonths, today as todayLocal } from "./dates.js";
 import { getCategory } from "./categories.js";
 import { formatCents } from "./money.js";
 
@@ -98,6 +98,65 @@ export function budgetStatus(month = thisMonth()) {
     total_remaining: totalBudget - totalSpent,
     over_count: over.length,
     verdict,
+  };
+}
+
+const pctChange = (now, before) => (before > 0 ? Math.round(((now - before) / before) * 100) : null);
+
+/**
+ * A month against the ones before it: totals and spending per category against the previous month and the average of the
+ * three full months before. For the month in progress it also compares with the previous month up to the same day, so a
+ * half month is not set against a whole one. Transfers excluded; cents.
+ */
+export function monthCompare(month = thisMonth(), today = todayLocal()) {
+  const { from, to } = monthRange(month);
+  const current = today >= from && today <= to;
+  const cut = current ? today : to;
+  const prev = addMonths(month, -1);
+  const prevRange = monthRange(prev);
+  const day = Number(cut.slice(8));
+  const prevCut = `${prev}-${String(Math.min(day, Number(prevRange.to.slice(8)))).padStart(2, "0")}`;
+  const avgMonths = [addMonths(month, -3), addMonths(month, -2), prev];
+  const avgRange = { from: monthRange(avgMonths[0]).from, to: prevRange.to };
+
+  const now = totals(from, cut);
+  const before = totals(prevRange.from, prevRange.to);
+  const beforeSameDay = current ? totals(prevRange.from, prevCut) : null;
+  const avgTotals = totals(avgRange.from, avgRange.to);
+  const avg = { income: Math.round(avgTotals.income / 3), expense: Math.round(avgTotals.expense / 3), net: Math.round(avgTotals.net / 3) };
+
+  const nowCat = byCategoryRaw(from, cut);
+  const prevCat = byCategoryRaw(prevRange.from, prevRange.to);
+  const sameCat = current ? byCategoryRaw(prevRange.from, prevCut) : null;
+  const avgCat = byCategoryRaw(avgRange.from, avgRange.to);
+  const ids = new Set([...nowCat.keys(), ...prevCat.keys(), ...avgCat.keys()]);
+  const categories = [];
+  for (const id of ids) {
+    const cat = id ? getCategory(id) : null;
+    if (cat && cat.kind !== "expense") continue;
+    const spent = nowCat.get(id)?.spent || 0;
+    const previous = prevCat.get(id)?.spent || 0;
+    const average = Math.round((avgCat.get(id)?.spent || 0) / 3);
+    if (!spent && !previous && !average) continue;
+    const sameDay = sameCat ? (sameCat.get(id)?.spent || 0) : null;
+    categories.push({
+      id: id || null, name: cat?.name || "Sin categoría", color: cat?.color || null, budget: cat?.monthly_budget ?? null,
+      spent, previous, previous_same_day: sameDay, average,
+      delta_previous: spent - (current ? sameDay : previous), delta_average: spent - average,
+      pct_previous: pctChange(spent, current ? sameDay : previous), pct_average: current ? null : pctChange(spent, average),
+    });
+  }
+  categories.sort((a, b) => Math.abs(b.delta_previous) - Math.abs(a.delta_previous) || b.spent - a.spent);
+  const ref = current ? beforeSameDay.expense : before.expense;
+  const diff = now.expense - ref;
+  const verdict = !now.expense && !ref
+    ? `Sin gastos en ${month} ni en ${prev}.`
+    : `${month}${current ? ` hasta el día ${day}` : ""}: gastado ${formatCents(now.expense)}, ${diff === 0 ? "igual que" : `${formatCents(Math.abs(diff))} ${diff > 0 ? "más" : "menos"} que`} ${prev}${current ? " a estas alturas" : ""}${pctChange(now.expense, ref) != null && diff ? ` (${diff > 0 ? "+" : ""}${pctChange(now.expense, ref)} %)` : ""}; la media de los 3 meses anteriores es ${formatCents(avg.expense)} al mes.`;
+  return {
+    month, previous_month: prev, average_months: avgMonths, in_progress: current, cut, previous_cut: current ? prevCut : prevRange.to,
+    totals: now, previous: before, previous_same_day: beforeSameDay, average: avg,
+    expense_delta_previous: diff, expense_pct_previous: pctChange(now.expense, ref),
+    categories, verdict,
   };
 }
 

@@ -14,6 +14,7 @@ import { thisMonth, isMonth, addMonths, parseDate, today } from "./dates.js";
 import { getSetting, setSetting, dataDir } from "./db.js";
 import { manifest, serviceWorker } from "./manifest.js";
 import * as family from "./hoard-link.js";
+import { alertSettings, updateAlertSettings, sweepAll } from "./alerts.js";
 
 const notFound = (res) => res.status(404).json({ error: "No existe." });
 const monthQuery = z.string().regex(/^\d{4}-\d{2}$/).optional();
@@ -106,6 +107,20 @@ export function installRoutes(app, { version, dataDirConfigured }) {
   app.get("/api/budget", (req, res) => {
     const month = monthQuery.parse(req.query.month) || thisMonth();
     res.json(reports.budgetStatus(month));
+  });
+  app.get("/api/reports/compare", (req, res) => {
+    const month = monthQuery.parse(req.query.month) || thisMonth();
+    if (!isMonth(month)) return res.status(400).json({ error: "Mes no válido (YYYY-MM)." });
+    res.json(reports.monthCompare(month));
+  });
+  // Alerts: renewal reminders, trial ends and budgets
+  app.get("/api/alerts/settings", (req, res) => res.json(alertSettings()));
+  app.put("/api/alerts/settings", async (req, res, next) => {
+    try {
+      const out = updateAlertSettings(req.body);
+      await sweepAll();
+      res.json(out);
+    } catch (error) { next(error); }
   });
   app.get("/api/reports/months", (req, res) => {
     const to = monthQuery.parse(req.query.to) || thisMonth();

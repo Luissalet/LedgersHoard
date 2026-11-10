@@ -6,7 +6,7 @@
 // facts plus a short snippet are stored.
 import crypto from "node:crypto";
 import { db, now, uid, transaction } from "./db.js";
-import { today as todayLocal, parseDate, monthRange, isMonth, thisMonth, daysBetween } from "./dates.js";
+import { today as todayLocal, parseDate, monthRange, isMonth, thisMonth, daysBetween, addDays, localDate } from "./dates.js";
 import { formatCents, parseAmount } from "./money.js";
 import * as accountsApi from "./accounts.js";
 import * as categoriesApi from "./categories.js";
@@ -20,6 +20,7 @@ import { mailSource, claimMail } from "./mail-source.js";
 import { runtime } from "./mail-runtime.js";
 import { beginBatch, flushBatch, notify, setHistory, HISTORY_AFTER_MS } from "./notifications.js";
 import * as subs from "./subscriptions.js";
+import { sweepAll } from "./alerts.js";
 import { txRef } from "./family.js";
 
 export const PAYMENT_GMAIL_QUERY = '(recibo OR factura OR "has pagado" OR "pago realizado" OR "pago recibido" OR cargo OR "se ha cargado" OR "compra realizada" OR "tu pedido" OR "total del pedido" OR suscripción OR renovación OR membresía OR "próximo cobro" OR "prueba gratuita" OR reembolso OR receipt OR invoice OR "your payment" OR "payment received" OR "payment confirmation" OR subscription OR renewal OR "your order" OR refund OR "trial ends") -category:promotions -category:social -category:forums';
@@ -199,7 +200,11 @@ function findOrderMail(facts, message_id, kinds = [facts.kind]) {
      ORDER BY created_at`,
   ).all(message_id, ...kinds, facts.order_ref, facts.merchant_key).map(mailRow);
   const weak = facts.order_ref.length < WEAK_REF_LENGTH;
-  const close = (r) => !weak || (r.facts.charge_date && facts.charge_date && Math.abs(daysBetween(r.facts.charge_date, facts.charge_date)) <= 1);
+  // a short number repeats (restaurant tickets) unless the date is a day apart, or the very same amount comes back within a month
+  // (a shop's «note added to your order» repeating the order summary)
+  const sameAmount = (r) => facts.amount_cents != null && r.facts.amount_cents === facts.amount_cents && (r.facts.currency || "EUR") === (facts.currency || "EUR")
+    && r.facts.charge_date && facts.charge_date && Math.abs(daysBetween(r.facts.charge_date, facts.charge_date)) <= 31;
+  const close = (r) => !weak || (r.facts.charge_date && facts.charge_date && Math.abs(daysBetween(r.facts.charge_date, facts.charge_date)) <= 1) || sameAmount(r);
   const hits = rows.filter(close).sort((a, b) => (STATE_RANK[a.state] ?? 9) - (STATE_RANK[b.state] ?? 9));
   return hits[0] || null;
 }
@@ -491,7 +496,28 @@ export function listMail({ state = null, kind = null, limit = 100 } = {}) {
 }
 
 export function reviewQueue() {
-  return listMail({ state: "review", limit: 200 });
+  return withPossibleDuplicates(listMail({ state: "review", limit: 200 }));
+}
+
+/**
+ * Hints for the review queue: another mail in the queue with the very same amount within a week (an order and its
+ * invoice from the shop's billing company, a receipt and a later note), and a recorded entry with that amount within
+ * three days. Only hints: nothing is merged or ignored by itself.
+ */
+function withPossibleDuplicates(items) {
+  const dateOf = (m) => m.date || (m.ts ? m.ts.slice(0, 10) : null);
+  return items.map((m) => {
+    if (m.amount_cents == null || !dateOf(m) || m.kind === "cancel") return m;
+    const twins = items.filter((o) => o.message_id !== m.message_id && o.amount_cents === m.amount_cents && (o.currency || "EUR") === (m.currency || "EUR")
+      && dateOf(o) && Math.abs(daysBetween(dateOf(o), dateOf(m))) <= 7 && o.kind === m.kind)
+      .map((o) => ({ message_id: o.message_id, merchant: o.merchant, date: dateOf(o), subject: o.subject }));
+    const signed = m.kind === "refund" ? Math.abs(m.amount_cents) : -Math.abs(m.amount_cents);
+    const entry = db().prepare(
+      `SELECT e.id, e.date, e.counterparty, a.name AS account FROM entries e LEFT JOIN accounts a ON a.id = e.account_id
+       WHERE e.amount_cents = ? AND e.date >= ? AND e.date <= ? AND e.transfer_id IS NULL ORDER BY e.date LIMIT 1`,
+    ).get(signed, addDays(dateOf(m), -3), addDays(dateOf(m), 3));
+    return { ...m, possible_duplicates: twins, possible_entry: entry || null };
+  });
 }
 
 /** Mails recorded as entries in a month (by entry date), newest first. */
@@ -599,7 +625,8 @@ export async function scanMail({ since_days = null, query = "", trigger = "manua
       }
       setHistory(false);
       await source.commit?.(answer);
-      run.alerts += await subs.sweepAlerts(todayLocal());
+      // reminders and budgets; a quiet first read leaves them to the hourly check so the history is not rung at once
+      if (last || !settings.quiet_history) run.alerts += await sweepAll(localDate(new Date(nowMs)));
       run.alerts += await flushBatch();
     }
   } catch (error) {

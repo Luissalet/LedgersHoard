@@ -56,6 +56,41 @@ function MailSettings({ notify }) {
   );
 }
 
+function AlertSettings({ notify }) {
+  const [form, setForm] = useState(null);
+  const [run, busy] = useAction(notify);
+  useEffect(() => { api.alerts.settings().then(setForm).catch(() => setForm(null)); }, []);
+  if (!form) return null;
+  const save = async (patch) => {
+    const out = await run(() => api.alerts.save(patch), "Avisos guardados.");
+    if (out) setForm(out);
+  };
+  const number = (key, max) => (
+    <input type="number" min={0} max={max} className="field field-sm num w-[90px]" defaultValue={form[key]} disabled={busy}
+      onBlur={(e) => { const v = Math.max(0, Math.min(max, Math.round(Number(e.target.value) || 0))); if (v !== form[key]) save({ [key]: v }); }} />
+  );
+  return (
+    <Section title="Avisos">
+      <div className="space-y-3">
+        <Field label="Antes de renovar una suscripción mensual o semanal" help="Días de antelación para avisarte y que puedas cancelarla. 0: sin aviso.">
+          <div className="flex items-center gap-2">{number("renew_days", 30)}<span className="help">días</span></div>
+        </Field>
+        <Field label="Antes de renovar una suscripción anual" help="0: sin aviso.">
+          <div className="flex items-center gap-2">{number("renew_days_yearly", 60)}<span className="help">días</span></div>
+        </Field>
+        <label className="flex items-center gap-2 text-[13px]">
+          <input type="checkbox" checked={form.budget} disabled={busy} onChange={(e) => save({ budget: e.target.checked })} />
+          Avisar cuando una categoría se acerque a su presupuesto o lo supere
+        </label>
+        <Field label="Primer aviso al llegar al" help="Porcentaje del presupuesto del mes. 0: solo cuando se supera.">
+          <div className="flex items-center gap-2">{number("budget_warn_pct", 99)}<span className="help">%</span></div>
+        </Field>
+      </div>
+      <p className="help mt-3">Los avisos salen en Correo y Suscripciones, en el móvil a través del hub y, si el hub no está, como aviso de Windows.</p>
+    </Section>
+  );
+}
+
 export default function Ajustes() {
   const { settings, dataDir, version, refresh, notify } = useApp();
   const [symbol, setSymbol] = useState(settings?.currency_symbol || "€");
@@ -73,6 +108,7 @@ export default function Ajustes() {
             <input className="field w-[120px]" value={symbol} maxLength={5} onChange={(e) => setSymbol(e.target.value)} onBlur={save} onKeyDown={(e) => e.key === "Enter" && save()} disabled={busy} />
           </Field>
         </Section>
+        <AlertSettings notify={notify} />
         <MailSettings notify={notify} />
         <Section title="Instalación">
           <dl className="grid grid-cols-[120px_1fr] gap-y-2 text-[13px]">

@@ -18,6 +18,7 @@ export const STATUSES = ["active", "trial", "cancelled", "paused"];
 const MAX_HISTORY = 24;
 
 const money = (cents, currency = "EUR") => formatCents(cents, currency === "EUR" ? "€" : currency);
+const esDate = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
 const periodText = { monthly: "al mes", yearly: "al año", weekly: "a la semana", unknown: "" };
 const row = (r) => (r ? { ...r, price_history: JSON.parse(r.price_history || "[]") } : null);
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
@@ -68,14 +69,30 @@ export function totals() {
   return { totals: list, unknown_period: unknown };
 }
 
+/**
+ * The next charge on or after `today`. A stored date that already passed (the
+ * charge mail never came, or the date was never refreshed) is worked forward one
+ * period at a time; `estimated` says so. Null without a date.
+ */
+export function nextChargeOnOrAfter(sub, today = todayLocal()) {
+  const date = sub.next_charge_date;
+  if (!date) return null;
+  if (date >= today) return { date, estimated: false };
+  if (!["monthly", "yearly", "weekly"].includes(sub.period)) return null;
+  let d = date;
+  for (let i = 0; i < 600 && d < today; i++) d = nextChargeDate(d, sub.period);
+  return { date: d, estimated: true };
+}
+
 /** Charges and trial ends in the next `days` days. */
 export function upcoming({ days = 30, from = todayLocal() } = {}) {
   const to = addDays(from, days);
   const items = [];
   for (const sub of listSubscriptions()) {
     if (sub.status === "cancelled" || sub.status === "paused") continue;
-    if (sub.next_charge_date && sub.next_charge_date >= from && sub.next_charge_date <= to) {
-      items.push({ id: sub.id, merchant: sub.merchant, kind: "charge", date: sub.next_charge_date, amount_cents: sub.amount_cents, currency: sub.currency, amount_text: money(sub.amount_cents, sub.currency), period: sub.period, status: sub.status });
+    const next = nextChargeOnOrAfter(sub, from);
+    if (next && next.date <= to) {
+      items.push({ id: sub.id, merchant: sub.merchant, kind: "charge", date: next.date, estimated: next.estimated, amount_cents: sub.amount_cents, currency: sub.currency, amount_text: money(sub.amount_cents, sub.currency), period: sub.period, status: sub.status });
     }
     if (sub.trial_end_date && sub.trial_end_date >= from && sub.trial_end_date <= to && sub.trial_end_date !== sub.next_charge_date) {
       items.push({ id: sub.id, merchant: sub.merchant, kind: "trial_end", date: sub.trial_end_date, amount_cents: sub.amount_cents, currency: sub.currency, amount_text: money(sub.amount_cents, sub.currency), period: sub.period, status: sub.status });
@@ -128,6 +145,7 @@ const createSchema = z.object({
   period: z.enum(PERIODS).default("monthly"),
   status: z.enum(STATUSES).default("active"),
   next_charge_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
+  trial_end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
   category_id: z.string().nullable().default(null),
   account_id: z.string().nullable().default(null),
   notes: z.string().trim().max(2000).default(""),
@@ -135,6 +153,8 @@ const createSchema = z.object({
 
 export function createSubscription(input, { source = "manual", key: keyOverride = null } = {}) {
   const data = createSchema.parse(input || {});
+  if (data.category_id && !getCategory(data.category_id)) fail("La categoría no existe.");
+  if (data.account_id && !getAccount(data.account_id)) fail("La cuenta no existe.");
   const key = keyOverride || merchantKey(data.merchant);
   if (findSubscriptionByKey(key)) fail("Ya existe una suscripción de ese comercio.", 409);
   const id = uid();
@@ -142,8 +162,8 @@ export function createSubscription(input, { source = "manual", key: keyOverride 
   db().prepare(
     `INSERT INTO subscriptions (id, merchant, merchant_key, amount_cents, currency, period, status, last_charge_date, next_charge_date, trial_end_date,
        account_id, category_id, price_history, source, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, '[]', ?, ?, ?, ?)`,
-  ).run(id, data.merchant, key, data.amount_cents, data.currency, data.period, data.status, data.next_charge_date, data.account_id, data.category_id, source, data.notes, ts, ts);
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, '[]', ?, ?, ?, ?)`,
+  ).run(id, data.merchant, key, data.amount_cents, data.currency, data.period, data.status, data.next_charge_date, data.trial_end_date, data.account_id, data.category_id, source, data.notes, ts, ts);
   return getSubscription(id);
 }
 
@@ -152,6 +172,8 @@ export function deleteSubscription(id) {
 }
 
 // ---------------------------------------------------------------- recurring evidence
+// a renewal never comes sooner than this after the last one: closer charges are extras in the same cycle
+const MIN_CYCLE_DAYS = { monthly: 20, yearly: 300, weekly: 5 };
 const GAP = { monthly: [25, 35], yearly: [350, 380], weekly: [6, 8] };
 
 /**
@@ -225,11 +247,16 @@ export async function observeCharge({ merchant, amount_cents, currency = "EUR", 
   const seen = sub.price_history.some((h) => h.amount_cents === amount_cents && h.currency === currency && Math.abs(daysBetween(h.date, date)) <= 3);
   if (seen) return sub;
   const newer = !sub.last_charge_date || date > sub.last_charge_date;
-  const history = [...sub.price_history, { date, amount_cents, currency }].sort((a, b) => a.date.localeCompare(b.date)).slice(-MAX_HISTORY);
-  if (!newer) {
+  // a second charge well inside the same billing cycle (extra usage, a top-up, an add-on) is not a renewal: it goes in the
+  // history marked as extra and never moves the price, the next date or raises a price alert
+  const extra = newer && sub.status !== "cancelled" && sub.last_charge_date && MIN_CYCLE_DAYS[sub.period] != null
+    && daysBetween(sub.last_charge_date, date) < MIN_CYCLE_DAYS[sub.period];
+  const history = [...sub.price_history, { date, amount_cents, currency, ...(extra ? { extra: true } : {}) }].sort((a, b) => a.date.localeCompare(b.date)).slice(-MAX_HISTORY);
+  if (!newer || extra) {
     db().prepare("UPDATE subscriptions SET price_history = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), sub.id);
     return getSubscription(sub.id);
   }
+  const wasCancelled = sub.status === "cancelled";
   const oldCents = sub.amount_cents;
   const oldCurrency = sub.currency;
   const newPeriod = sub.period === "unknown" ? (detected !== "unknown" ? detected : (recurring && detectPeriodFromEntries({ merchant, amount_cents, date })) || "unknown") : sub.period;
@@ -239,7 +266,14 @@ export async function observeCharge({ merchant, amount_cents, currency = "EUR", 
        price_history = ?, account_id = COALESCE(account_id, ?), category_id = COALESCE(category_id, ?), updated_at = ? WHERE id = ?`,
   ).run(amount_cents, currency, newPeriod, date, next, JSON.stringify(history), account_id, category_id, now(), sub.id);
   sub = getSubscription(sub.id);
-  if (oldCurrency !== currency || changed(oldCents, amount_cents)) await priceAlert(sub, oldCents, oldCurrency, amount_cents, currency);
+  if (wasCancelled) {
+    await notify({
+      kind: "subscription.charged_after_cancel", severity: "high", title: `${sub.merchant} te ha cobrado aunque la tenías cancelada`,
+      body: `${money(amount_cents, currency)} el ${esDate(date)}. Vuelve a figurar como activa; revisa la baja con el servicio.`,
+      dedupe_key: `charged-cancelled:${sub.id}:${date}`, event: "ledger.subscription.charged_after_cancel", url: appLink("#/suscripciones"),
+      payload: { subscription_id: sub.id, merchant: sub.merchant, amount: amount_cents / 100, amount_cents, currency, date, url: appLink("#/suscripciones") },
+    });
+  } else if (oldCurrency !== currency || changed(oldCents, amount_cents)) await priceAlert(sub, oldCents, oldCurrency, amount_cents, currency);
   return sub;
 }
 
@@ -302,8 +336,11 @@ export async function observeFailed({ merchant, amount_cents, currency = "EUR", 
   });
 }
 
-/** Time-based alerts: trial ending in <= 3 days, yearly charge in <= 7 days. */
-export async function sweepAlerts(today = todayLocal()) {
+/**
+ * Time-based alerts: trial ending in <= 3 days, and a reminder before every renewal so there is time to cancel it:
+ * `renewDays` before a monthly or weekly charge (0 = never), `renewDaysYearly` before a yearly one (0 = never).
+ */
+export async function sweepAlerts(today = todayLocal(), { renewDays = 3, renewDaysYearly = 7 } = {}) {
   let created = 0;
   for (const sub of listSubscriptions()) {
     if (sub.status === "cancelled" || sub.status === "paused") continue;
@@ -320,14 +357,17 @@ export async function sweepAlerts(today = todayLocal()) {
         if (a) created++;
       }
     }
-    if (sub.period === "yearly" && sub.next_charge_date) {
-      const left = daysBetween(today, sub.next_charge_date);
-      if (left >= 0 && left <= 7) {
+    const next = nextChargeOnOrAfter(sub, today);
+    const window = sub.period === "yearly" ? renewDaysYearly : (sub.period === "monthly" || sub.period === "weekly") ? renewDays : 0;
+    if (next && window > 0 && sub.amount_cents > 0 && next.date !== sub.trial_end_date) {
+      const left = daysBetween(today, next.date);
+      if (left >= 0 && left <= window) {
+        const when = left === 0 ? "hoy" : left === 1 ? "mañana" : `en ${left} días`;
         const a = await notify({
-          kind: "subscription.upcoming", severity: "medium", title: `${sub.merchant} se renueva ${left === 0 ? "hoy" : `en ${left} días`}`,
-          body: `${money(sub.amount_cents, sub.currency)} al año, el ${sub.next_charge_date}.`,
-          dedupe_key: `upcoming:${sub.id}:${sub.next_charge_date}`, event: "ledger.subscription.upcoming",
-          payload: { subscription_id: sub.id, merchant: sub.merchant, date: sub.next_charge_date, amount_cents: sub.amount_cents, currency: sub.currency },
+          kind: "subscription.upcoming", severity: "medium", title: `${sub.merchant} se renueva ${when}`,
+          body: `${money(sub.amount_cents, sub.currency)} ${periodText[sub.period] || ""} el ${esDate(next.date)}${next.estimated ? " (fecha estimada)" : ""}. Si no quieres renovarla, cancélala antes.`.replace(/\s+/g, " "),
+          dedupe_key: `upcoming:${sub.id}:${next.date}`, event: "ledger.subscription.upcoming", url: appLink("#/suscripciones"),
+          payload: { subscription_id: sub.id, merchant: sub.merchant, date: next.date, estimated: next.estimated, days_left: left, period: sub.period, amount: sub.amount_cents / 100, amount_cents: sub.amount_cents, currency: sub.currency, url: appLink("#/suscripciones") },
         });
         if (a) created++;
       }
@@ -363,8 +403,12 @@ export function summary({ days = 30 } = {}) {
 }
 
 export function present(sub) {
+  const live = sub.status !== "cancelled" && sub.status !== "paused";
+  const next = live ? nextChargeOnOrAfter(sub) : null;
   return {
     ...sub, amount_text: money(sub.amount_cents, sub.currency),
     monthly_cents: monthlyCents(sub), yearly_cents: yearlyCents(sub),
+    // the next charge from today (a passed stored date worked forward, marked estimated)
+    next_charge: next ? next.date : null, next_charge_estimated: !!next?.estimated,
   };
 }

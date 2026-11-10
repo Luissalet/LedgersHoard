@@ -87,6 +87,51 @@ function ForecastCard({ forecast, symbol }) {
   );
 }
 
+const signed = (cents, symbol) => `${cents > 0 ? "+" : cents < 0 ? "−" : ""}${formatCents(Math.abs(cents), symbol)}`;
+
+/** The month against the previous one (cut at the same day while the month is in progress) and the 3-month average. */
+export function CompareCard({ data, symbol }) {
+  const [all, setAll] = useState(false);
+  if (!data) return null;
+  const ref = data.in_progress ? data.previous_same_day : data.previous;
+  const diff = data.expense_delta_previous;
+  const rows = data.categories.filter((c) => c.spent || c.previous || c.average);
+  const shown = all ? rows : rows.slice(0, 6);
+  return (
+    <Section title="Frente a meses anteriores">
+      <div className="grid grid-cols-3 gap-2 text-[13px]">
+        <div><div className="help text-[11px]">{data.in_progress ? `Hasta el día ${Number(data.cut.slice(8))}` : monthLabel(data.month)}</div><div className="num font-semibold">{formatCents(data.totals.expense, symbol)}</div></div>
+        <div><div className="help text-[11px]">{monthLabel(data.previous_month)}{data.in_progress ? " (mismo día)" : ""}</div><div className="num">{formatCents(ref.expense, symbol)}</div></div>
+        <div><div className="help text-[11px]">Media 3 meses</div><div className="num">{formatCents(data.average.expense, symbol)}</div></div>
+      </div>
+      <p className={`mt-2 text-[13px] ${diff > 0 ? "expense" : diff < 0 ? "income" : ""}`}>
+        {diff === 0 ? "Igual que el mes anterior." : `${signed(diff, symbol)}${data.expense_pct_previous != null ? ` (${diff > 0 ? "+" : ""}${data.expense_pct_previous} %)` : ""} frente a ${monthLabel(data.previous_month)}${data.in_progress ? " a estas alturas" : ""}.`}
+      </p>
+      {rows.length > 0 && (
+        <div className="mt-3 overflow-x-auto">
+          <table className="table">
+            <thead><tr><th>Categoría</th><th className="r">Ahora</th><th className="r">Antes</th><th className="r">Diferencia</th></tr></thead>
+            <tbody>
+              {shown.map((c) => {
+                const before = data.in_progress ? c.previous_same_day : c.previous;
+                return (
+                  <tr key={c.id || "none"}>
+                    <td><span className="mr-2 inline-block h-2.5 w-2.5 rounded-sm" style={{ background: c.color || "var(--bar-bg)" }} aria-hidden="true" />{c.name}</td>
+                    <td className="r num whitespace-nowrap">{formatCents(c.spent, symbol)}</td>
+                    <td className="r num whitespace-nowrap help">{formatCents(before, symbol)}</td>
+                    <td className={`r num whitespace-nowrap ${c.delta_previous > 0 ? "expense" : c.delta_previous < 0 ? "income" : ""}`}>{signed(c.delta_previous, symbol)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {rows.length > 6 && <button type="button" className="btn-link mt-2 text-[13px]" onClick={() => setAll((v) => !v)}>{all ? "Ver menos" : `Ver las ${rows.length} categorías`}</button>}
+        </div>
+      )}
+    </Section>
+  );
+}
+
 export default function Resumen() {
   const { settings } = useApp();
   const symbol = settings?.currency_symbol || "€";
@@ -95,6 +140,7 @@ export default function Resumen() {
   const [recent, setRecent] = useState([]);
   const [mail, setMail] = useState(null);
   const [forecast, setForecast] = useState(null);
+  const [compare, setCompare] = useState(null);
   const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);   // bumped when the assistant finishes a turn
   useCopilotRefresh(() => setTick((t) => t + 1));
@@ -117,6 +163,12 @@ export default function Resumen() {
   useEffect(() => {
     let alive = true;
     api.forecastMonth(month).then((f) => alive && setForecast(f)).catch(() => alive && setForecast(null));
+    return () => { alive = false; };
+  }, [month, tick]);
+
+  useEffect(() => {
+    let alive = true;
+    api.compare(month).then((c) => alive && setCompare(c)).catch(() => alive && setCompare(null));
     return () => { alive = false; };
   }, [month, tick]);
 
@@ -169,6 +221,7 @@ export default function Resumen() {
                 )}
               </Section>
             </div>
+            <div className="space-y-4">
             <Section title="Cuentas">
               {active.length ? (
                 <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
@@ -183,6 +236,8 @@ export default function Resumen() {
                 <Empty text="Aún no tienes cuentas." action={<a href="#/cuentas" className="btn btn-primary">Crear una cuenta</a>} />
               )}
             </Section>
+            <CompareCard data={compare} symbol={symbol} />
+            </div>
           </div>
         </>
       )}

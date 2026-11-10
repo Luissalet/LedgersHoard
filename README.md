@@ -163,7 +163,7 @@ Stored (last 200) and shown in Correo and by `ledger_notifications`. The person 
 
 `faustus-plugin.json` describes the app for Faustus (health check, launch hint and the MCP command with placeholders).
 
-Tools (46):
+Tools (52):
 
 | Tool | Purpose |
 | --- | --- |
@@ -200,7 +200,10 @@ Tools (46):
 | `mail_paste` | Record a receipt that is not in the inbox from `subject`, `text`, `from`. |
 | `subscriptions_list` | Subscriptions by `status` with monthly and yearly totals. |
 | `subscription_update` | Set status (cancelled / paused / active), amount, period, category, next charge, notes. |
-| `subscriptions_upcoming` | Charges and trial ends in the next `days` (30). |
+| `subscriptions_upcoming` | Charges and trial ends in the next `days` (30); a date already passed moves to the next period and is marked `estimated`. |
+| `subscription_delete` | Delete a subscription record that is wrong (`confirm: true`). To cancel one use `subscription_update` with `status: cancelled`. |
+| `month_compare` | A month against the previous one (cut at the same day while in progress) and the 3-month average, total and per category. |
+| `alert_settings` | Read or change the alerts: days before a renewal (monthly/weekly and yearly), budget alert and its percentage. |
 | `mail_spending` | What the mail recorded in a `month`, by merchant and category, with entry links. |
 | `tx_find` | Find the expense movement that matches an amount and date (an invoice's), with a score; 0.8 or more is a strong match. |
 | `tx_attach_doc` | Keep a `hoard://app/kind/id` document reference on a movement (idempotent); it shows as a chip that opens the document in its app. |
@@ -213,6 +216,26 @@ Tools (46):
 | `ledger_notifications` | Recent notifications: recorded payments, new subscriptions, price changes, trials, failed payments. |
 
 Every description ends with a `Sinónimos:` line of Spanish words. Ambiguous account or category names return `candidates` so the assistant can ask instead of guessing.
+
+## Renewal and budget alerts
+
+- **Before every renewal** (monthly, weekly or yearly): "X renews in N days… cancel it before if you do not want it". 3 days before monthly ones and 7 before yearly ones by default; **Ajustes → Avisos** (0 = off) or `alert_settings`. Event `ledger.subscription.upcoming`.
+- **Budgets**: at 80 % (adjustable; 0 = only when passed) and when a category passes its monthly budget, once per category, month and level (`ledger.budget.warning`, `ledger.budget.over`). Checked after any write (UI, assistant, import, mail) and every hour.
+- **Charged after cancelling**: a charge for a subscription marked cancelled raises a high alert (`ledger.subscription.charged_after_cancel`) and makes it active again.
+- **Extra charges**: a second charge inside the same billing cycle is kept in the history as an extra; it never moves the price or the date nor raises a price alert.
+- The hourly check runs even with mail reading off; `LEDGER_ALERTS=0` turns it off.
+
+## Month comparison
+
+**Resumen → Frente a meses anteriores**: spending against the previous month and the average of the three before, total and per category. The month in progress is compared with the previous month up to the same day. `GET /api/reports/compare?month=YYYY-MM`, tool `month_compare`.
+
+## OFX/QFX statements and entries typed by hand
+
+**Importar** also takes OFX/QFX statements (file or pasted text; fixed columns, only the sign can be flipped). A bank row that matches an entry typed **by hand** in the same account (same amount, ±3 days; with several, the one with a similar concept; still ambiguous, none) is joined with it like mail entries: one entry, with the bank's date and amount. Preview and result count `rows_matched_mail` / `rows_matched_manual`.
+
+## Mail review queue
+
+Each mail waiting for review points at another queued mail with the same amount within 7 days (`possible_duplicates`) and at a recorded entry with that amount within 3 days (`possible_entry`). A short order number with the same amount within a month is the same order; «pedido con número N» and «Tu pedido Marca N» are read as order numbers; a sales mail with no amount and no order is not a payment.
 
 ## Faustus copilot
 

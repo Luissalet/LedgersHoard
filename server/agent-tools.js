@@ -14,6 +14,7 @@ import { parseAmount, formatCents } from "./money.js";
 import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
 import { fail, monthField, amountField, resolveAccountOrFail, resolveCategoryOrFail, parseAmountOrFail, signedAmount, present, tool, RO } from "./agent-helpers.js";
 import { MAIL_TOOLS, MAIL_INSTRUCTIONS } from "./mail-tools.js";
+import { alertSettings, updateAlertSettings, sweepAll } from "./alerts.js";
 import { FAMILY_TOOLS, FAMILY_INSTRUCTIONS } from "./family-tools.js";
 
 const BASE_INSTRUCTIONS = `Ledger's Hoard is the user's household ledger (accounts, categories, entries, budgets, CSV imports). Amounts are integer cents in tool results; format them for the user as "12,50 €".
@@ -130,6 +131,21 @@ export const TOOLS = [
       return { ok: true, ...status, categories: only, verdict: only.length && only[0].budget != null
         ? `${status.month}: ${cat.name} ${only[0].over ? "superado" : "dentro de presupuesto"}, gastado ${formatCents(only[0].spent)} de ${formatCents(only[0].budget)} (${left >= 0 ? "queda" : "te pasas en"} ${formatCents(Math.abs(left))}).`
         : `${status.month}: ${cat.name} no tiene presupuesto; gastado ${formatCents(only[0]?.spent || 0)}.` };
+    }),
+
+  tool("month_compare",
+    "Compare a month with the previous one and the 3-month average, in total and per category. Comparar meses.\nmonth YYYY-MM (default current). For the month in progress the previous month is cut at the same day. Each category has spent, previous, previous_same_day, average and deltas (cents), sorted by the biggest change; verdict is one line.\nSinónimos: comparar con el mes pasado, gasto más que el mes anterior, en qué gasto más, diferencia con la media, evolución por categoría",
+    z.object({ month: monthField }), RO,
+    ({ month }) => { const m = month || thisMonth(); if (!isMonth(m)) fail("Mes no válido (YYYY-MM)."); return reports.monthCompare(m); }),
+
+  tool("alert_settings",
+    "Read or change when Ledger warns: days before a renewal, budget warnings. Avisos.\nWithout arguments returns the settings. renew_days: days before a monthly or weekly renewal (0 = never); renew_days_yearly: days before a yearly one; budget: warn about budgets; budget_warn_pct: early warning at that % of a budget (0 = only when it is passed). Changing them checks the alerts at once.\nSinónimos: avisos, recordatorio de renovación, avisarme antes de cobrar, aviso de presupuesto, alertas de gasto",
+    z.object({ renew_days: z.number().int().min(0).max(30).optional(), renew_days_yearly: z.number().int().min(0).max(60).optional(), budget: z.boolean().optional(), budget_warn_pct: z.number().int().min(0).max(99).optional() }), { idempotentHint: true },
+    async (a) => {
+      const patch = Object.fromEntries(Object.entries(a).filter(([, v]) => v !== undefined));
+      if (!Object.keys(patch).length) return { settings: alertSettings() };
+      const settings = updateAlertSettings(patch);
+      return { settings, alerts_created: await sweepAll() };
     }),
 
   tool("months_report",
@@ -277,12 +293,12 @@ export const TOOLS = [
     }),
 
   tool("import_csv_preview",
-    "Analyse a bank statement CSV and propose a column mapping; nothing written.\nAnalyse bank statement CSV text (; or , separated, quoted fields, DD/MM/YYYY or YYYY-MM-DD dates, Spanish decimal comma, optional debit/credit columns). Returns detected columns, guessed mapping (column names for date, amount or debit+credit, description, counterparty, decimal), first 20 parsed rows and how many are duplicates for the given account. Nothing is written.\nSinónimos: importar extracto, csv del banco, previsualizar importación, extracto bancario, cargar movimientos",
+    "Analyse a bank statement CSV and propose a column mapping; nothing written.\nAnalyse bank statement CSV text (; or , separated, quoted fields, DD/MM/YYYY or YYYY-MM-DD dates, Spanish decimal comma, optional debit/credit columns). OFX/QFX text is read too. Returns columns, guessed mapping (date, amount or debit+credit, description, counterparty, decimal), 20 sample rows, duplicates, and payments already recorded from mail (rows_matched_mail) or typed by hand in that account (rows_matched_manual): joined, not added. Nothing is written.\nSinónimos: importar extracto, csv del banco, ofx, qfx, previsualizar importación, extracto bancario, cargar movimientos",
     z.object({ csv: z.string().min(1), mapping: mappingSchema.optional(), account: z.string().optional() }), RO,
     ({ csv, mapping, account }) => previewImport({ csv, mapping, account_id: account ? resolveAccountOrFail(account).id : "" })),
 
   tool("import_csv_commit",
-    "Import CSV rows into an account with a mapping; duplicates skipped.\nImport CSV rows into an account (name or id) using the mapping from import_csv_preview. Rows whose hash (date|amount|description|account) already exists are skipped, so re-running is safe. Returns added/skipped counts and the first entries.\nSinónimos: importar, confirmar importación, cargar extracto, meter movimientos del banco",
+    "Import CSV rows into an account with a mapping; duplicates skipped.\nImport CSV rows into an account (name or id) using the mapping from import_csv_preview. Rows whose hash (date|amount|description|account) already exists are skipped, so re-running is safe. A row that is a payment already recorded from mail or typed by hand keeps that one entry (bank date and amount win): matched_mail and matched_manual count them. Also takes OFX/QFX text. Returns added/skipped counts and the first entries.\nSinónimos: importar, confirmar importación, cargar extracto, meter movimientos del banco",
     z.object({ csv: z.string().min(1), mapping: mappingSchema.optional(), account: z.string().min(1), filename: z.string().max(200).default(""), category: z.string().optional() }), { idempotentHint: true },
     ({ csv, mapping, account, filename, category }) => {
       const acc = resolveAccountOrFail(account);

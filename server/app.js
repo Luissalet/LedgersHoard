@@ -14,6 +14,7 @@ import { installFamilyRoutes } from "./family-routes.js";
 import { agendaItems } from "./agenda.js";
 import { mailSource } from "./mail-source.js";
 import { PAYMENT_SUBJECT_TERMS } from "./mail-engine.js";
+import { budgetWatch, startAlertLoop } from "./alerts.js";
 import * as family from "./hoard-link.js";
 import { z } from "zod";
 import { createGuard, makeAgentRoutes, installSpa, installErrorHandlers } from "./hoard-commons/express.js";
@@ -29,7 +30,7 @@ export function resolveDataDir(env = process.env) {
   return commonDataDir("LEDGER", ROOT, env);
 }
 
-export function createApp({ dataDir, dataDirConfigured = false, serveStatic = true, allowedHosts = process.env.LEDGER_ALLOWED_HOSTS, startScheduler = false } = {}) {
+export function createApp({ dataDir, dataDirConfigured = false, serveStatic = true, allowedHosts = process.env.LEDGER_ALLOWED_HOSTS, startScheduler = false, startAlerts = startScheduler } = {}) {
   initDb(dataDir);
   seedCategories();
   // the token is stable across restarts, so an MCP bridge started earlier keeps working
@@ -42,6 +43,7 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
   app.disable("x-powered-by");
   app.use(createGuard({ allowedHosts }));
   app.use(express.json({ limit: "10mb" }));
+  app.use(budgetWatch());
   installRoutes(app, { version, dataDirConfigured });
   installMailRoutes(app);
   installFamilyRoutes(app);
@@ -58,5 +60,7 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
     scheduler.start();
     Promise.resolve(mailSource().registerInterest?.(PAYMENT_SUBJECT_TERMS, { force: true })).catch(() => {}); // tell the hub's mail gateway what Ledger reads
   }
+  // renewal reminders, trial ends and budgets: an hourly check, also when the mail reading is off
+  if (startAlerts) startAlertLoop();
   return { app, token, version, scheduler };
 }

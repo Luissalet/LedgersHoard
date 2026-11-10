@@ -126,7 +126,7 @@ Se guardan (últimos 200) y se ven en Correo y con `ledger_notifications`. Se av
 
 `faustus-plugin.json` describe la aplicación para Faustus (comprobación de salud, arranque y comando MCP con marcadores).
 
-Herramientas (46):
+Herramientas (52):
 
 | Herramienta | Uso |
 | --- | --- |
@@ -157,7 +157,10 @@ Herramientas (46):
 | `mail_paste` | Apuntar un recibo que no está en el buzón a partir de `subject`, `text`, `from`. |
 | `subscriptions_list` | Suscripciones por `status` con totales mensual y anual. |
 | `subscription_update` | Cambiar estado (cancelled / paused / active), importe, periodo, categoría, próximo cobro, notas. |
-| `subscriptions_upcoming` | Cobros y fines de prueba de los próximos `days` (30). |
+| `subscriptions_upcoming` | Cobros y fines de prueba de los próximos `days` (30); una fecha ya pasada se lleva al siguiente periodo y sale como `estimated`. |
+| `subscription_delete` | Borrar una suscripción que es un error (`confirm: true`). Para darse de baja se usa `subscription_update` con `status: cancelled`. |
+| `month_compare` | Un mes frente al anterior (cortado el mismo día si el mes está en curso) y la media de los 3 anteriores, en total y por categoría. |
+| `alert_settings` | Leer o cambiar los avisos: días antes de renovar (mensual/semanal y anual), aviso de presupuesto y su porcentaje. |
 | `mail_spending` | Lo apuntado desde el correo en un `month`, por comercio y categoría, con enlaces a los movimientos. |
 | `tx_find` | Buscar el movimiento de gasto que coincide con un importe y una fecha (el de una factura), con puntuación; 0,8 o más es coincidencia fuerte. |
 | `tx_attach_doc` | Guardar en un movimiento la referencia `hoard://app/tipo/id` de un documento (idempotente); sale como etiqueta que abre el documento en su app. |
@@ -170,6 +173,26 @@ Herramientas (46):
 | `ledger_notifications` | Avisos recientes: pagos apuntados, suscripciones nuevas, cambios de precio, pruebas, pagos fallidos. |
 
 Cada descripción termina con una línea `Sinónimos:` con las palabras que se usan en español. Si un nombre de cuenta o categoría es ambiguo, la herramienta devuelve `candidates` para que el asistente pregunte en vez de adivinar.
+
+## Avisos de renovación y de presupuesto
+
+- **Antes de cada renovación** (mensual, semanal o anual) llega un aviso «X se renueva en N días… si no quieres renovarla, cancélala antes». Por defecto 3 días antes de las mensuales y 7 de las anuales; se cambia en **Ajustes → Avisos** (0 = sin aviso) o con `alert_settings`. Evento `ledger.subscription.upcoming`.
+- **Presupuestos**: al llegar al 80 % (ajustable; 0 = solo al pasarse) y al superar el presupuesto mensual de una categoría, un aviso por categoría, mes y nivel (`ledger.budget.warning`, `ledger.budget.over`). Se comprueba al guardar cualquier movimiento (interfaz, asistente, importación, correo) y cada hora.
+- **Cobro tras cancelar**: si llega un cobro de una suscripción marcada como cancelada, aviso de gravedad alta (`ledger.subscription.charged_after_cancel`) y vuelve a figurar activa.
+- **Cargos extra**: un segundo cargo dentro del mismo periodo (consumo extra, recarga) se guarda en el historial como «cargo extra» y no cambia el precio, la fecha ni dispara aviso de precio.
+- La comprobación horaria corre aunque la lectura del correo esté apagada; `LEDGER_ALERTS=0` la apaga.
+
+## Comparación con meses anteriores
+
+**Resumen → Frente a meses anteriores**: gasto del mes frente al anterior y a la media de los tres anteriores, total y por categoría ordenado por la mayor diferencia. Con el mes en curso se compara con el mes anterior hasta el mismo día. API `GET /api/reports/compare?month=YYYY-MM`, herramienta `month_compare`.
+
+## Extractos OFX/QFX y casado con lo apuntado a mano
+
+**Importar** acepta, además del CSV, extractos OFX/QFX (archivo o texto pegado; columnas fijas, solo se puede invertir el signo). Una fila del banco que coincide con un movimiento apuntado **a mano** en la misma cuenta (mismo importe, ±3 días; si hay varios, el de concepto parecido; si sigue ambiguo, ninguno) se casa con él igual que con los del correo: queda un movimiento, con la fecha y el importe del banco. La vista previa y el resultado cuentan `rows_matched_mail` / `rows_matched_manual`.
+
+## Cola de revisión del correo
+
+Cada correo por revisar señala otro correo de la cola con el mismo importe en ±7 días (`possible_duplicates`: el pedido y la factura de la empresa que lo cobra) y un movimiento ya apuntado con ese importe en ±3 días (`possible_entry`). Además: un número de pedido corto con el mismo importe en el mes es el mismo pedido («nota añadida a tu pedido»), se reconocen «pedido con número N» y «Tu pedido Marca N», y un correo comercial sin importe ni pedido («¿Ahorrar en tu factura?») no es un pago.
 
 ## Copiloto de Faustus
 

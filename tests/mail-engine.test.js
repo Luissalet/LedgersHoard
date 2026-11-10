@@ -542,7 +542,9 @@ test("subscriptions_upcoming lists next charges and trial ends in the window", a
   const upcoming = subs.upcoming({ days: 30, from: "2026-10-15" });
   assert.deepEqual(upcoming.map((u) => [u.merchant, u.kind, u.date]), [["Notion", "charge", "2026-10-18"], ["Netflix", "charge", "2026-11-05"]]);
   assert.deepEqual(subs.upcoming({ days: 5, from: "2026-10-15" }).map((u) => u.merchant), ["Notion"]);
-  assert.equal(subs.upcoming({ days: 30, from: "2026-12-01" }).length, 0);
+  // a date that already passed is worked forward one period and marked estimated
+  const later = subs.upcoming({ days: 30, from: "2026-12-01" }).filter((u) => u.kind === "charge");
+  assert.ok(later.length > 0 && later.every((u) => u.estimated && u.date >= "2026-12-01"));
 });
 
 test("scan is single-flight: an overlapping scan is refused, not queued", async () => {
