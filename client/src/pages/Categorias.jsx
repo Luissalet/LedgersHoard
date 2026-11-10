@@ -130,16 +130,16 @@ export default function Categorias() {
   );
 
   const table = (kind) => (
-    <table className="table">
+    <div className="overflow-x-auto"><table className="table">
       <thead><tr><th>Nombre</th><th>{kind === "expense" ? "Presupuesto mensual" : ""}</th><th></th></tr></thead>
       <tbody>{ordered(kind).map(row)}</tbody>
-    </table>
+    </table></div>
   );
 
   return (
     <Page title="Categorías" description="Pulsa un nombre para renombrarlo y un presupuesto para cambiarlo; se guarda al salir del campo. Solo las categorías de gasto tienen presupuesto.">
       <div className="mb-4"><NewCategoryForm categories={categories} onCreate={create} onDraft={setCreating} busy={busy} /></div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section title="Gastos">{table("expense")}</Section>
         <Section title="Ingresos">{table("income")}</Section>
       </div>

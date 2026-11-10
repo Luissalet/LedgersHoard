@@ -617,10 +617,13 @@ test("a renewal date that already passed is worked forward, and a charge a few d
 });
 
 test("GET /api/family/agenda answers with this app's token only", async () => {
-  createSubscription({ merchant: "Streaming Plus", amount_cents: 1299, period: "monthly", next_charge_date: "2026-10-25" }, { source: "mail" });
-  const denied = await s.call("GET", "/api/family/agenda?from=2026-10-01&to=2026-10-31");
+  // a renewal a week from today (the route reads the real clock: a fixed date would pass and roll forward out of the window)
+  const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  createSubscription({ merchant: "Streaming Plus", amount_cents: 1299, period: "monthly", next_charge_date: day(7) }, { source: "mail" });
+  const window = `from=${day(0)}&to=${day(20)}`;
+  const denied = await s.call("GET", `/api/family/agenda?${window}`);
   assert.equal(denied.status, 401);
-  const ok = await s.call("GET", "/api/family/agenda?from=2026-10-01&to=2026-10-31", null, { Authorization: `Bearer ${s.token}` });
+  const ok = await s.call("GET", `/api/family/agenda?${window}`, null, { Authorization: `Bearer ${s.token}` });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.ok, true);
   assert.deepEqual(ok.body.items.map((i) => [i.id.split(":")[1], i.title]), [["renewal", "Streaming Plus se renueva"]]);
