@@ -105,5 +105,6 @@
         "person"
       ]
     }
-  }
+  },
+  "skills": {"slugs": ["household-ledger-month-close"], "limit": 1}
 }
