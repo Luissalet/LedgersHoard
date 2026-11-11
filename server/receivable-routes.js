@@ -2,7 +2,6 @@
 // ("1.234,56") or as amount_cents; ids in the path, notice ids too.
 import { z } from "zod";
 import * as rec from "./receivables.js";
-import { parseAmount } from "./money.js";
 
 /** Express 4 does not catch rejected promises: hand them to the shared error handler. */
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -75,5 +74,3 @@ export function installReceivableRoutes(app) {
   app.post("/api/receivables/proposals/:id/accept", wrap(async (req, res) => res.json(await rec.acceptProposal(req.params.id))));
   app.post("/api/receivables/proposals/:id/dismiss", (req, res) => res.json(rec.dismissProposal(req.params.id)));
 }
-
-export { parseAmount };
