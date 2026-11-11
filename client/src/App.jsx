@@ -12,6 +12,7 @@ import Prevision from "./pages/Prevision.jsx";
 import Compartidos from "./pages/Compartidos.jsx";
 import Correo from "./pages/Correo.jsx";
 import Suscripciones from "./pages/Suscripciones.jsx";
+import Cobros from "./pages/Cobros.jsx";
 import Ajustes from "./pages/Ajustes.jsx";
 
 const PAGES = [
@@ -25,6 +26,7 @@ const PAGES = [
   { path: "prevision", label: "Previsión", icon: "M3 18l6-6 4 3 8-9M17 6h4v4", component: Prevision },
   { path: "correo", label: "Correo", icon: "M3 6h18v12H3zM3 7l9 7 9-7", component: Correo },
   { path: "suscripciones", label: "Suscripciones", icon: "M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M18 3v4h-4M6 21v-4h4", component: Suscripciones },
+  { path: "cobros", label: "Cobros", icon: "M6 3h9l4 4v14H6zM9 12h7M9 16h5M9 8h3", component: Cobros },
   { path: "ajustes", label: "Ajustes", icon: "M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2", component: Ajustes },
 ];
 
