@@ -83,6 +83,7 @@ Once opened through the tunnel, the browser offers to install it (PWA).
 - **Previsión** — save named what-if scenarios with one-time, monthly or quarterly income/expense assumptions, edit them, and compare recorded vs projected balances for 3–24 months. Compare two scenarios side by side with monthly and cumulative B minus A differences, account breakdowns and a separate view for each currency. Both assumption lists stay visible. Observed recurring candidates can fill the assumption form for review. Transfers are already reflected in recorded balances; scenario lines never create entries. Recorded balances include posted entries through each month's end; assumptions accumulate from the selected starting month.
 - **Correo** — reads the mail account connected to Faustus, finds payments (receipts, «has pagado», card notices, bills with «importe a cargar», shop orders with a total, refunds) and records them as expenses on the charge date. Status card (mail source auto / hub / Faustus and where it reads from, account read, last and next scan, last error, «Leer ahora», on/off, auto-record, account for mail charges, interval, review limit in euros, toast and family-bus switches), «Apuntado desde el correo» with Deshacer, «Por revisar» with Aceptar (merchant, amount, date, account and category editable) and Ignorar, duplicates seen, recent notifications, and a box to paste a receipt that is not in the inbox.
 - **Suscripciones** — subscriptions found in mail (known services, subscription words) or in repeated charges (`recurring.js`; never shops or food), with monthly and yearly cost per currency, price history, next charge, trial end, Cancelada / Pausada / Editar, upcoming charges in 30 days and the alerts raised.
+- **Cobros** — invoices issued to clients (client, their email, concept, amount, issue and due date, reference, notes, payment link or instructions, contract terms) with their notice history. Each morning the daily check (the mail scheduler's own tick, no second loop) looks at what is overdue: day 1 a plain reminder, day 7 a firmer one with the amount, the reference and how to pay, day 14 no mail to the client at all but a notification to the user with the client's whole file (invoices, notices, days late) so they decide. Deadlines (1 / 7 / 14) and tone (sobrio / cercano / formal) are settings, and one notice per step and invoice is enforced by a unique index, so running the check twice adds nothing. Texts come from sober Spanish templates; when the family model is available it rewrites them and the template stays as the fallback (a rewrite that loses the amount or the reference is discarded). Notices are drafts: the screen edits them, «Enviar» sends one through the family's mail helper and, when it cannot send, the text comes back ready to copy. A payment found in the ledger (mail or typed) whose amount and payer or reference match a pending invoice is only proposed: accepting it marks the invoice paid and leaves a short thank-you draft. Summary (pending, overdue, collected this month), sortable table with status and days late, the invoice's notice timeline and quick add.
 - **Ajustes** — currency symbol; Faustus folder and user for the mail and «Reiniciar el correo» (start over); data folder and version shown read-only.
 
 All money is stored as integer cents. User input like `12,50`, `12.5`, `-3`, `1.234,56` or `1,234.56` is parsed by `shared/money.js` (`parseAmount`), which the UI, the API and the tools all use.
@@ -119,6 +120,13 @@ All routes are JSON, validated with zod, and answer errors as `{ "error": "…" 
 | `GET /api/mail/review`, `/recorded?month=`, `/messages?state=&kind=`, `/spending?month=`, `/runs`, `/notifications` | Review queue, recorded this month, message log, spending from mail, run history, notifications. |
 | `POST /api/mail/accept`, `/ignore`, `/undo`, `/paste` | Message ids go in the body: `{ message_id, account?, category?, amount?, date?, merchant? }`, `{ message_id }`, `{ message_id, confirm: true }`, `{ subject, text, from }`. |
 | `GET/POST /api/subscriptions`, `GET /api/subscriptions/upcoming?days=`, `POST /api/subscriptions/detect`, `PATCH/DELETE /api/subscriptions/:id` | Subscriptions with totals, upcoming charges, detection from entries. |
+| `GET/POST /api/receivables`, `GET/PATCH/DELETE /api/receivables/:id` | Invoices issued: list (with `status`, `q`, `sort`, `order` and the totals), create, read one with its notices and proposals, edit, delete. Amounts as `amount` (text) or `amount_cents`. |
+| `POST /api/receivables/:id/pause`, `/paid` | Pause or resume the chase (`{ paused }`); mark it collected (`{ date?, entry_id? }`). |
+| `POST /api/receivables/check`, `/sweep` | Run the notice ladder now (`{ today?, drafts? }`); look for payments in the ledger that match a pending invoice. |
+| `GET /api/receivables/drafts`, `/proposals` | Reminder drafts waiting to be sent; payments waiting for a yes. |
+| `PATCH /api/receivables/notices/:id`, `POST …/send`, `…/discard` | Edit a draft, send it through the family's mail helper (the text comes back to copy when it cannot send), discard it. |
+| `POST /api/receivables/proposals/:id/accept`, `…/dismiss` | Accept a found payment (marks the invoice paid and leaves a thank-you draft) or dismiss it. |
+| `GET/PUT /api/receivables/settings` | Deadlines (day 1 / 7 / 14), tone, signature, auto-draft and whether the model may rewrite the texts. |
 | `PUT /api/settings` | `{ currency_symbol }`. |
 | `GET /api/agent/tools` | Tool catalogue (name, description, JSON schema, annotations) and the assistant instructions. |
 | `POST /api/agent/call` | `{ name, arguments }` with `Authorization: Bearer <token>`; used by the MCP bridge. |
@@ -149,6 +157,10 @@ A mail that cancels an order already recorded («pedido cancelado») is not a su
 
 Stored (last 200) and shown in Correo and by `ledger_notifications`. The person is told through the family hub's notification facet (quiet hours, spheres, phone; priority from severity, group `ledger`, the dedupe key) and, when the hub is not there, by a Windows toast (`notify.via`: `auto` hub first, `hub` never a toast, `own` toast only). A message the hub holds on purpose (quiet hours) is not repeated as a toast; each stored alert records `delivered.via` and `delivered.held`. The toast is the family's `showToast`: a temporary UTF-8 BOM `.ps1` run hidden with PowerShell (win32 only, attributed to «Ledger's Hoard»); a scan shows at most 3 alerts plus one summary of the rest. Family bus events (`family.emit`): `ledger.mail.recorded` {tx_id, entry_id, merchant, amount, amount_cents, currency, date, order_ref?, message_id, items}, `ledger.payment.failed` {merchant, amount, …}, `ledger.subscription.price` {merchant, amount, old_amount, currency, …}, `ledger.subscription.new` {merchant, amount, currency, period, url, …}, `ledger.subscription.trial`, plus `ledger.subscription.upcoming` and `ledger.subscription.cancelled`. Severity: low for recorded or cancelled, medium for a new subscription, price change or yearly renewal within 7 days, high for failed payments and trials ending within 3 days. Each alert fires once (dedupe key). In event payloads `amount` is a positive number in major units (12.99), and `amount_cents` is the signed value stored; the purchases view of the hub is built from `ledger.mail.recorded`.
 
+### Cobros: ladder, sending and reconciliation
+
+`server/receivables.js` keeps the invoices (`receivables`), their notices (`receivable_notices`, unique per invoice and step) and the payments that look like one (`receivable_proposals`, unique per invoice and entry). The daily check runs on the same tick of `server/mail-scheduler.js` that already reads the mail, once per local day (`receivables.last_check`), and it also runs with the mail reading off. Settings (`receivables.*`): `step1_days` (1), `step2_days` (7), `escalate_days` (14), `tone` (`sobrio`), `auto_draft` (1), `use_model` (1) and `signature` (empty). The deadlines must be in order. A paused invoice is never checked; a paid one discards its drafts. Sending uses the `send` action of the family's mail helper (the same one that reads the inbox): when it is not available the notice stays a draft with the reason and the text can be copied. Reconciliation never touches the ledger: it proposes, and accepting marks the invoice paid on the movement's date and leaves the thank-you in drafts. Family bus events: `ledger.receivables.escalated` and `ledger.receivables.payment_found`.
+
 ## Connect an assistant (MCP)
 
 `server/mcp.js` is a stdio MCP server that proxies every call to the running app, so only one process ever opens the database. Keep the app running while the assistant works.
@@ -163,7 +175,7 @@ Stored (last 200) and shown in Correo and by `ledger_notifications`. The person 
 
 `faustus-plugin.json` describes the app for Faustus (health check, launch hint and the MCP command with placeholders).
 
-Tools (52):
+Tools (59):
 
 | Tool | Purpose |
 | --- | --- |
@@ -213,6 +225,13 @@ Tools (52):
 | `split_settle` | Record a payback; applied to the oldest open shares first, never more than is owed. |
 | `income_from_sales` | Book the income of a sales batch from Mercator, one entry per currency and day, idempotent per batch and line. |
 | `report_year` | Totals of a year by month and by category. |
+| `receivables_list` | Invoices issued by `status` (pending / overdue / paid / paused), with days late and the totals. |
+| `receivable_add` | Record an invoice: `client`, `amount`, `due_date`, and the client's `email`, `reference`, `payment_link` or `payment_terms`. |
+| `receivable_update` | Change an invoice, pause or resume the chase, or mark it paid (`status`, `paid_date`). |
+| `receivables_check` | Run the notice ladder now (`today`, `drafts`); never twice for the same step. |
+| `receivable_drafts` | The reminder drafts waiting to be sent, with their text. |
+| `receivable_send` | Send one draft to the client through the family's mail helper; if it cannot send, the text comes back to copy. |
+| `receivable_mark_paid` | Mark an invoice collected (`ref`, `date`, `entry_id`); pending reminders are discarded. |
 | `ledger_notifications` | Recent notifications: recorded payments, new subscriptions, price changes, trials, failed payments. |
 
 Every description ends with a `Sinónimos:` line of Spanish words. Ambiguous account or category names return `candidates` so the assistant can ask instead of guessing.
@@ -295,12 +314,13 @@ server/   app.js (Express), index.js (boot), db.js, accounts.js, categories.js, 
           reports.js, csv.js, imports.js, dates.js, money.js, routes.js, agent-tools.js,
           mcp.js, mail-engine.js, mail-parse.js, mail-match.js, mail-source.js, mail-scheduler.js,
           mail-routes.js, mail-tools.js, mail-settings.js, subscriptions.js, notifications.js,
+          receivables.js, receivable-routes.js, receivable-tools.js,
           mail/mail_helper.py (the family's mail helper, run by Faustus's Python),
           hoard-link.js + hoard-commons/ (vendored from Hoard Link 0.8: money, dates, merchants, text, ics,
           guard, agent routes, MCP bridge, SPA, database, token and port helpers; do not edit),
           family.js (hub client), family-tools.js, family-routes.js, tx-links.js, splits.js, sales.js, outlook.js, agenda.js
 shared/   money.js (parseAmount / formatCents, thin names over hoard-commons/money.js; used by server and client)
-client/   React 19 + Vite + Tailwind v4 (pages: Resumen, Movimientos, Cuentas, Categorías, Importar, Informes, Compartidos, Previsión, Correo, Suscripciones, Ajustes)
+client/   React 19 + Vite + Tailwind v4 (pages: Resumen, Movimientos, Cuentas, Categorías, Importar, Informes, Compartidos, Previsión, Correo, Suscripciones, Cobros, Ajustes)
 scripts/  launch.mjs, dev.mjs
 tests/    node:test suites
 ```

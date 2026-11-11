@@ -84,6 +84,7 @@ Una vez abierta a través del túnel, el navegador ofrece instalarla (PWA).
 La misma comparación está disponible en `GET /api/forecast/compare` y en la herramienta MCP `compare_cash_forecasts`: `scenario_id` para A, `comparison_id` para B, `from` (YYYY-MM) y `months` (1–24). Omitir un id usa solo el saldo registrado en ese lado. No se convierten divisas.
 - **Correo** — lee la cuenta de correo conectada a Faustus, encuentra pagos (recibos, «has pagado», avisos de tarjeta, facturas con «importe a cargar», pedidos con total, reembolsos) y los apunta como gastos en la fecha del cobro. Tarjeta de estado (cuenta leída, última y próxima lectura, último error, «Leer ahora», activar, apuntar solos, cuenta de los cobros, frecuencia, límite de importe en euros, avisos de Windows y de la familia), «Apuntado desde el correo» con Deshacer, «Por revisar» con Aceptar (comercio, importe, fecha, cuenta y categoría editables) e Ignorar, duplicados vistos, avisos recientes y un cuadro para pegar un recibo que no esté en el buzón.
 - **Suscripciones** — las que aparecen en el correo (servicios conocidos, palabras de suscripción) o en cargos repetidos (`recurring.js`; nunca tiendas ni comida), con coste mensual y anual por divisa, historial de precio, próximo cobro, fin de prueba, Cancelada / Pausada / Editar, cobros de los próximos 30 días y los avisos generados.
+- **Cobros** — facturas emitidas a clientes (cliente, su correo, concepto, importe, fecha de emisión y vencimiento, referencia, notas, enlace o instrucciones de pago, contrato o condiciones) con su historial de avisos. Cada mañana la comprobación diaria (el propio latido del planificador del correo, sin otro bucle) mira lo vencido: día 1 un recordatorio amable, día 7 uno más firme con el importe, la referencia y cómo pagar, día 14 no se escribe al cliente sino que se crea un aviso para el usuario con el historial entero del cliente (facturas, avisos, días de retraso) para que decida. Los plazos (1 / 7 / 14) y el tono (sobrio / cercano / formal) son ajustes, y un índice único impide dos avisos del mismo escalón para la misma factura: repetir la comprobación no añade nada. Los textos salen de plantillas sobrias en castellano; si el modelo de la familia está disponible los reescribe y la plantilla queda como respaldo (una reescritura que pierda el importe o la referencia se descarta). Los avisos son borradores: la pantalla los edita, «Enviar» manda uno con el ayudante de correo de la familia y, si no puede enviar, el texto queda listo para copiar. Un ingreso del libro (del correo o apuntado a mano) cuyo importe y pagador o referencia casan con una factura pendiente solo se propone: al aceptarlo la factura queda cobrada y se deja un agradecimiento breve en borrador. Resumen (pendiente, vencido, cobrado este mes), tabla ordenable con estado y días de retraso, la línea de tiempo de avisos de la factura y alta rápida.
 - **Ajustes** — símbolo de moneda; carpeta y usuario de Faustus para el correo y «Reiniciar el correo» (empezar de cero); carpeta de datos y versión solo de lectura.
 
 Todos los importes se guardan en céntimos enteros. Entradas como `12,50`, `12.5`, `-3`, `1.234,56` o `1,234.56` las interpreta `shared/money.js` (`parseAmount`), común a la interfaz, la API y las herramientas.
@@ -112,6 +113,10 @@ Un correo que cancela un pedido ya apuntado («pedido cancelado») no es un avis
 
 Se guardan (últimos 200) y se ven en Correo y con `ledger_notifications`. Se avisa a la persona por la pasarela de avisos del hub (horas de silencio, esferas, móvil) y, si el hub no está, con un aviso de Windows (`notify.via`: `auto` primero el hub, `hub` nunca aviso local, `own` solo aviso local). Un mensaje que el hub retiene a propósito (horas de silencio) no se repite como aviso local. El aviso de Windows usa un `.ps1` temporal con BOM UTF-8 que PowerShell ejecuta oculto (solo win32, a nombre de «Ledger's Hoard»); una lectura muestra como máximo 3 avisos y un resumen del resto. Eventos del bus familiar (`family.emit`): `ledger.mail.recorded` {entry_id, merchant, amount, date}, `ledger.subscription.new`, `ledger.subscription.price`, `ledger.subscription.trial`, `ledger.payment.failed`, y además `ledger.subscription.upcoming` y `ledger.subscription.cancelled`. Gravedad: baja para apuntado o cancelada, media para suscripción nueva, cambio de precio o renovación anual a 7 días o menos, alta para pagos fallidos y pruebas que acaban en 3 días o menos. Cada aviso salta una sola vez (clave de deduplicación).
 
+### Cobros: escalera, envío y conciliación
+
+`server/receivables.js` guarda las facturas (`receivables`), sus avisos (`receivable_notices`, único por factura y escalón) y los ingresos que parecen una factura (`receivable_proposals`, único por factura y movimiento). La comprobación diaria la lanza el mismo latido de `server/mail-scheduler.js` que ya lee el correo, una vez por día local (`receivables.last_check`), y también corre con la lectura del correo apagada. Ajustes (`receivables.*`): `step1_days` (1), `step2_days` (7), `escalate_days` (14), `tone` (`sobrio`), `auto_draft` (1), `use_model` (1) y `signature` (vacía). Los plazos tienen que ir en orden. Una factura en pausa no se comprueba; una cobrada descarta sus borradores. El envío usa la acción `send` del ayudante de correo de la familia (la misma que lee el buzón): si no está disponible, el aviso sigue en borrador con el motivo y el texto se puede copiar. La conciliación no toca el libro: propone, y al aceptar marca la factura cobrada con la fecha del movimiento y deja el agradecimiento en borradores. Eventos del bus: `ledger.receivables.escalated` y `ledger.receivables.payment_found`.
+
 ## Conectar un asistente (MCP)
 
 `server/mcp.js` es un servidor MCP por stdio que reenvía cada llamada a la aplicación en marcha, de modo que solo un proceso abre la base de datos. Mantened la aplicación abierta mientras el asistente trabaja.
@@ -126,7 +131,7 @@ Se guardan (últimos 200) y se ven en Correo y con `ledger_notifications`. Se av
 
 `faustus-plugin.json` describe la aplicación para Faustus (comprobación de salud, arranque y comando MCP con marcadores).
 
-Herramientas (52):
+Herramientas (59):
 
 | Herramienta | Uso |
 | --- | --- |
@@ -170,6 +175,13 @@ Herramientas (52):
 | `split_settle` | Apuntar una devolución; se aplica primero a las partes abiertas más antiguas y nunca más de lo debido. |
 | `income_from_sales` | Apuntar el ingreso de un lote de ventas de Mercator, un movimiento por divisa y día, idempotente por lote y línea. |
 | `report_year` | Totales de un año por mes y por categoría. |
+| `receivables_list` | Facturas emitidas por `status` (pending / overdue / paid / paused), con días de retraso y los totales. |
+| `receivable_add` | Apuntar una factura: `client`, `amount`, `due_date` y, si se saben, el `email` del cliente, la `reference`, el `payment_link` o las `payment_terms`. |
+| `receivable_update` | Cambiar una factura, pausar o reanudar el cobro o marcarla cobrada (`status`, `paid_date`). |
+| `receivables_check` | Ejecutar la escalera de avisos ahora (`today`, `drafts`); nunca dos veces el mismo escalón. |
+| `receivable_drafts` | Los borradores de aviso pendientes de enviar, con su texto. |
+| `receivable_send` | Enviar un borrador al cliente con el ayudante de correo de la familia; si no puede, el texto vuelve para copiarlo. |
+| `receivable_mark_paid` | Marcar una factura cobrada (`ref`, `date`, `entry_id`); los avisos pendientes se descartan. |
 | `ledger_notifications` | Avisos recientes: pagos apuntados, suscripciones nuevas, cambios de precio, pruebas, pagos fallidos. |
 
 Cada descripción termina con una línea `Sinónimos:` con las palabras que se usan en español. Si un nombre de cuenta o categoría es ambiguo, la herramienta devuelve `candidates` para que el asistente pregunte en vez de adivinar.
@@ -239,7 +251,7 @@ npm run build   # vite build → dist/
 
 Las pruebas usan carpetas temporales y nunca tocan `data/`.
 
-Los módulos de la familia están en `server/family*.js`, `tx-links.js`, `splits.js`, `sales.js`, `outlook.js` y `agenda.js`; las páginas, en `Compartidos.jsx` y la tarjeta de `Resumen.jsx`. Los módulos del correo están en `server/mail-*.js`, `server/subscriptions.js`, `server/notifications.js` y `server/mail/mail_helper.py`; las páginas, en `client/src/pages/Correo.jsx` y `Suscripciones.jsx`.
+Los módulos de la familia están en `server/family*.js`, `tx-links.js`, `splits.js`, `sales.js`, `outlook.js` y `agenda.js`; las páginas, en `Compartidos.jsx` y la tarjeta de `Resumen.jsx`. Los módulos del correo están en `server/mail-*.js`, `server/subscriptions.js`, `server/notifications.js` y `server/mail/mail_helper.py`; las páginas, en `client/src/pages/Correo.jsx` y `Suscripciones.jsx`. Los de Cobros, en `server/receivables.js`, `server/receivable-routes.js` y `server/receivable-tools.js`; la página, en `client/src/pages/Cobros.jsx`.
 
 Licencia: MIT (ver `LICENSE`).
 
