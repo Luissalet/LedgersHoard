@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
+import { installAppDock } from "./app-dock.js";
 import { Toast } from "./components/ui.jsx";
 import { useCopilotRefresh } from "./copilot-hooks.js";
 import Resumen from "./pages/Resumen.jsx";
@@ -67,6 +68,7 @@ export default function App() {
     }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => installAppDock({ api, refresh, pages: PAGES.map((p) => p.path) }), [refresh]);
   useCopilotRefresh(refresh);   // the assistant finished a turn: accounts, categories and settings may have changed
 
   const notify = useCallback((message) => setToast(message), []);
