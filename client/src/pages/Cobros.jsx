@@ -279,8 +279,8 @@ export default function Cobros() {
     const cmp = typeof x === "number" && typeof y === "number" ? x - y : String(x ?? "").localeCompare(String(y ?? ""), "es");
     return (sort.order === "desc" ? -1 : 1) * cmp;
   });
-  const head = (key, label, extra = "") => (
-    <th className={`text-left ${extra}`} scope="col">
+  const head = (key, label, align = "text-left") => (
+    <th className={`${align} px-2 py-2`} scope="col">
       <button type="button" className="btn-link text-[12px] font-semibold" onClick={() => setSort((s) => ({ key, order: s.key === key && s.order === "asc" ? "desc" : "asc" }))}>
         {label}{sort.key === key ? (sort.order === "asc" ? " ↑" : " ↓") : ""}
       </button>
@@ -324,30 +324,30 @@ export default function Cobros() {
                       {head("amount", "Importe", "text-right")}
                       {head("days", "Retraso", "text-right")}
                       {head("status", "Estado")}
-                      <th scope="col" className="text-right text-[12px] font-semibold">Avisos</th>
+                      <th scope="col" className="px-2 py-2 text-right text-[12px] font-semibold">Avisos</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.map((r) => (
                       <React.Fragment key={r.id}>
                         <tr className="border-b align-top" style={{ borderColor: "var(--line)" }}>
-                          <td className="py-2">
+                          <td className="px-2 py-2">
                             <button type="button" className="btn-link text-left font-semibold" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}>
                               {r.client}
                             </button>
                             <div className="help text-[11px]">{r.concept || "—"}{r.reference ? ` · ${r.reference}` : ""}</div>
                           </td>
-                          <td className="num py-2">{dateLabel(r.due_date)}</td>
-                          <td className="num py-2 text-right">{r.amount}</td>
-                          <td className="num py-2 text-right">{r.status === "paid" ? "—" : r.days_overdue > 0 ? `${r.days_overdue} d` : <span className="help">—</span>}</td>
-                          <td className="py-2"><span className={STATUS_CHIP[r.status] || "chip"}>{STATUS[r.status] || r.status}</span></td>
-                          <td className="py-2 text-right">
+                          <td className="num px-2 py-2">{dateLabel(r.due_date)}</td>
+                          <td className="num px-2 py-2 text-right">{r.amount}</td>
+                          <td className="num px-2 py-2 text-right">{r.status === "paid" ? "—" : r.days_overdue > 0 ? `${r.days_overdue} d` : <span className="help">—</span>}</td>
+                          <td className="px-2 py-2"><span className={STATUS_CHIP[r.status] || "chip"}>{STATUS[r.status] || r.status}</span></td>
+                          <td className="px-2 py-2 text-right">
                             {r.notices_count ? <span className="help text-[12px]">{r.notices_count}{r.drafts_count ? ` · ${r.drafts_count} en borrador` : ""}</span> : <span className="help text-[12px]">—</span>}
                           </td>
                         </tr>
                         {open === r.id && (
                           <tr>
-                            <td colSpan={6} className="pb-4">
+                            <td colSpan={6} className="px-2 pb-4">
                               <div className="panel-white">
                                 <Detail id={r.id} busy={busy} run={run} onChanged={load} />
                                 <div className="mt-3 flex flex-wrap gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
