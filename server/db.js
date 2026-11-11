@@ -186,7 +186,60 @@ const MIGRATIONS = [
   // Hoard Link's merchant keys: a merchant that is not in the family table is keyed by its folded name without the legal suffix
   // ("bar manolo s l" is now "bar manolo"), and the table knows more merchants. What was stored under the old key is re-keyed once.
   rekeyMerchants,
+  // Invoices issued and chased (Cobros): the invoice itself, the notices prepared for it (one per step, never twice) and the
+  // payments found in the ledger that look like one of them and wait for the user to say yes.
+  `
+  CREATE TABLE IF NOT EXISTS receivables (
+    id TEXT PRIMARY KEY,
+    client TEXT NOT NULL,
+    email TEXT NOT NULL DEFAULT '',
+    concept TEXT NOT NULL DEFAULT '',
+    amount_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'EUR',
+    issued_date TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reference TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    payment_link TEXT NOT NULL DEFAULT '',
+    payment_terms TEXT NOT NULL DEFAULT '',
+    paid_date TEXT NULL,
+    paid_entry_id TEXT NULL REFERENCES entries(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS receivables_status ON receivables(status);
+  CREATE INDEX IF NOT EXISTS receivables_due ON receivables(due_date);
+  CREATE TABLE IF NOT EXISTS receivable_notices (
+    id TEXT PRIMARY KEY,
+    receivable_id TEXT NOT NULL REFERENCES receivables(id) ON DELETE CASCADE,
+    ts TEXT NOT NULL,
+    step INTEGER NOT NULL,
+    channel TEXT NOT NULL DEFAULT 'email',
+    subject TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'draft',
+    sent_at TEXT NULL,
+    error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS receivable_notices_step ON receivable_notices(receivable_id, step);
+  CREATE INDEX IF NOT EXISTS receivable_notices_state ON receivable_notices(state);
+  CREATE TABLE IF NOT EXISTS receivable_proposals (
+    id TEXT PRIMARY KEY,
+    receivable_id TEXT NOT NULL REFERENCES receivables(id) ON DELETE CASCADE,
+    entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS receivable_proposals_pair ON receivable_proposals(receivable_id, entry_id);
+  CREATE INDEX IF NOT EXISTS receivable_proposals_state ON receivable_proposals(state);
+  `,
 ];
+
+/** The migration that re-keys the merchants (its number is what the tests replay). */
+export const REKEY_MIGRATION = MIGRATIONS.indexOf(rekeyMerchants) + 1;
 
 /** The key the app used before the shared merchant table: the folded name, punctuation as single spaces. */
 const legacyKey = (name) => String(name ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
