@@ -14,6 +14,7 @@ import { parseAmount, formatCents } from "./money.js";
 import { parseDate, today, thisMonth, isMonth, addMonths } from "./dates.js";
 import { fail, monthField, amountField, resolveAccountOrFail, resolveCategoryOrFail, parseAmountOrFail, signedAmount, present, tool, RO } from "./agent-helpers.js";
 import { MAIL_TOOLS, MAIL_INSTRUCTIONS } from "./mail-tools.js";
+import { RECEIVABLE_TOOLS, RECEIVABLE_INSTRUCTIONS } from "./receivable-tools.js";
 import { alertSettings, updateAlertSettings, sweepAll } from "./alerts.js";
 import { FAMILY_TOOLS, FAMILY_INSTRUCTIONS } from "./family-tools.js";
 
@@ -29,7 +30,7 @@ Months are YYYY-MM, dates are YYYY-MM-DD. Default month is the current one. dele
 Imports: run import_csv_preview, show the mapping and the duplicate count, and only then import_csv_commit with the same csv and mapping. Duplicates are skipped by hash, so committing twice is safe.
 Forecasts: use cash_forecast for what-if questions. Saved scenarios are assumptions, never recorded entries; a recurring candidate is not automatically a confirmed future charge.
 Anomalies: spending_anomalies answers "did they charge me twice?" or "anything odd this month?"; report each finding with its date, amount and the merchant's usual amount, and never call it fraud or an error.`;
-export const AGENT_INSTRUCTIONS = `${BASE_INSTRUCTIONS}\n${MAIL_INSTRUCTIONS}\n${FAMILY_INSTRUCTIONS}`;
+export const AGENT_INSTRUCTIONS = `${BASE_INSTRUCTIONS}\n${MAIL_INSTRUCTIONS}\n${RECEIVABLE_INSTRUCTIONS}\n${FAMILY_INSTRUCTIONS}`;
 
 export const TOOLS = [
   tool("list_accounts",
@@ -319,6 +320,7 @@ export const TOOLS = [
     }),
 
   ...MAIL_TOOLS,
+  ...RECEIVABLE_TOOLS,
   ...FAMILY_TOOLS,
 ];
 

@@ -8,6 +8,7 @@ import { init as initDb } from "./db.js";
 import { seedCategories } from "./categories.js";
 import { installRoutes } from "./routes.js";
 import { installMailRoutes } from "./mail-routes.js";
+import { installReceivableRoutes } from "./receivable-routes.js";
 import { createMailScheduler } from "./mail-scheduler.js";
 import { TOOLS, AGENT_INSTRUCTIONS } from "./agent-tools.js";
 import { installFamilyRoutes } from "./family-routes.js";
@@ -46,6 +47,7 @@ export function createApp({ dataDir, dataDirConfigured = false, serveStatic = tr
   app.use(budgetWatch());
   installRoutes(app, { version, dataDirConfigured });
   installMailRoutes(app);
+  installReceivableRoutes(app);
   installFamilyRoutes(app);
   makeAgentRoutes({ app: "ledger", tools: TOOLS, z, token, instructions: AGENT_INSTRUCTIONS, recordCall: family.recordCall }).install(app);
   // the family agenda (the hub's Today view and calendar), answered with this app's own token; before the catch-alls below
