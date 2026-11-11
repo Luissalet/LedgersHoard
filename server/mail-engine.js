@@ -22,6 +22,7 @@ import { beginBatch, flushBatch, notify, setHistory, HISTORY_AFTER_MS } from "./
 import * as subs from "./subscriptions.js";
 import { sweepAll } from "./alerts.js";
 import { txRef } from "./family.js";
+import { proposeForEntry, announceProposals } from "./receivables.js";
 
 export const PAYMENT_GMAIL_QUERY = '(recibo OR factura OR "has pagado" OR "pago realizado" OR "pago recibido" OR cargo OR "se ha cargado" OR "compra realizada" OR "tu pedido" OR "total del pedido" OR suscripción OR renovación OR membresía OR "próximo cobro" OR "prueba gratuita" OR reembolso OR receipt OR invoice OR "your payment" OR "payment received" OR "payment confirmation" OR subscription OR renewal OR "your order" OR refund OR "trial ends") -category:promotions -category:social -category:forums';
 export const PAYMENT_SUBJECT_TERMS = [
@@ -270,6 +271,8 @@ async function recordNow({ base, facts, chosen, existing = false }) {
     payload: recordedPayload(entry, facts, message_id),
   });
   await claimMail(facts.hub_id, txRef(entry.id));
+  // an income that matches a pending invoice waits in Cobros for a yes; it never marks it paid by itself
+  await announceProposals(proposeForEntry(entry)).catch(() => {});
   return entry;
 }
 
@@ -416,6 +419,7 @@ export async function acceptMail(message_id, overrides = {}) {
     body: `${date} · ${account.name}`, dedupe_key: `recorded:${message_id}`, event: "ledger.mail.recorded", payload: recordedPayload(entry, accepted, message_id),
   });
   await claimMail(f.hub_id, txRef(entry.id));
+  await announceProposals(proposeForEntry(entry)).catch(() => {});
   return { mail: presentMail(getMail(message_id)), entry, ...(possible ? { warning: `Existe un movimiento parecido (${possible.id}, ${possible.date}, ${money(possible.amount_cents)}). Revisa que no esté duplicado.`, similar_entry_id: possible.id } : {}) };
 }
 
