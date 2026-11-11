@@ -5,12 +5,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { tempDir } from "./helpers.js";
-import { db, init, close } from "../server/db.js";
+import { db, init, close, REKEY_MIGRATION } from "../server/db.js";
 import { createSubscription } from "../server/subscriptions.js";
 import { createApp } from "../server/app.js";
 
-// ------------------------------------------------------------------ migration 5: keys of unknown merchants
-test("migration 5 re-keys what the old key scheme stored, once, and leaves clashes alone", () => {
+// ------------------------------------------------------------------ the last migration: keys of unknown merchants
+test("the re-keying migration re-keys what the old key scheme stored, once, and leaves clashes alone", () => {
   const dir = tempDir();
   try {
     init(dir);
@@ -18,7 +18,7 @@ test("migration 5 re-keys what the old key scheme stored, once, and leaves clash
     const raw = db();
     raw.prepare("UPDATE subscriptions SET merchant_key = ? WHERE id = ?").run("bar manolo s l", a.id);
     raw.prepare("INSERT INTO mail_messages (message_id, ts, facts, created_at) VALUES ('m1', '2026-10-01T00:00:00Z', ?, '2026-10-01T00:00:00Z')").run(JSON.stringify({ merchant: "Bar Manolo S.L.", merchant_key: "bar manolo s l" }));
-    raw.exec("DELETE FROM schema_version WHERE version = 5");
+    raw.exec(`DELETE FROM schema_version WHERE version >= ${REKEY_MIGRATION}`);
     close();
     init(dir);
     assert.equal(db().prepare("SELECT merchant_key FROM subscriptions WHERE id = ?").get(a.id).merchant_key, "bar manolo");
