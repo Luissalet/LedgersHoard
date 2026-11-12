@@ -130,11 +130,12 @@ function toBase64(img) {
  * e.g. gpu_busy, bad_request, backend_error). `timeoutMs` is how long the hub may take (queue and model);
  * `graceMs` is the extra time before this client gives up on a hub that stopped answering. The evidence for any answer is the text you sent: keep it.
  */
-export async function chat({ messages, capability = "llm", images, json, effort, maxTokens, temperature, timeoutMs = 300000, graceMs = 15000 } = {}) {
+export async function chat({ messages, capability = "llm", images, json, effort, maxTokens, temperature, timeoutMs = 300000, graceMs = 15000, chatTemplateKwargs } = {}) {
   const body = { capability, messages: messages || [] };
   if (images && images.length) body.images = images.map(toBase64);
   if (json !== undefined && json !== null && json !== false) body.json = json;
   if (effort) body.effort = effort;
+  if (chatTemplateKwargs !== undefined) body.chat_template_kwargs = chatTemplateKwargs;
   if (maxTokens) body.max_tokens = maxTokens;
   if (temperature !== undefined && temperature !== null) body.temperature = temperature;
   body.timeout_s = timeoutMs / 1000;
@@ -147,12 +148,85 @@ export async function chat({ messages, capability = "llm", images, json, effort,
   const d = data && typeof data === "object" ? data : {};
   if (st === 200 && d.ok) {
     return { ok: true, text: d.text ?? "", json: d.json ?? null, model: d.model ?? null, provider: d.provider ?? null,
-             ms: d.ms ?? null, usage: d.usage ?? null, ...(d.json_error ? { json_error: d.json_error } : {}), error: null, detail: null };
+             ms: d.ms ?? null, usage: d.usage ?? null,
+             ...(d.finish_reason != null ? { finish_reason: d.finish_reason, completed: d.completed ?? null } : {}),
+             ...(d.reasoning_controls != null ? { reasoning_controls: d.reasoning_controls } : {}),
+             ...(d.json_error ? { json_error: d.json_error } : {}), error: null, detail: null };
   }
   const code = d.error || "";
   const error = code === "no_model" || code === "timeout" ? code : `http_${st}`;
   const detail = st === 401 ? `the hub refused this app's token (${state.tokenFile || "no token file"})` : (d.detail || code || "");
   return { ok: false, error, code, detail, text: "", json: null, model: null, provider: null };
+}
+
+/** Yield native Hub SSE events. Abort with signal, or break/return the iterator.
+ * timeoutMs covers queue+generation; idleTimeoutMs bounds upstream inactivity.
+ * Heartbeats are waiting events. A length finish has completed:false. Never retries.
+ */
+export async function* streamChat({ messages, capability = "llm", images, json, effort, maxTokens, temperature,
+    tools, toolChoice, timeoutMs = 300000, idleTimeoutMs = 120000, signal, graceMs = 15000, chatTemplateKwargs } = {}) {
+  const body = { messages: messages || [], capability, stream: true, timeout_s: timeoutMs / 1000,
+                 idle_timeout_s: idleTimeoutMs / 1000 };
+  if (images?.length) body.images = images.map(toBase64);
+  if (json !== undefined) body.json = json;
+  if (effort) body.effort = effort;
+  if (maxTokens !== undefined) body.max_tokens = maxTokens;
+  if (temperature !== undefined) body.temperature = temperature;
+  if (tools !== undefined) body.tools = tools;
+  if (toolChoice !== undefined) body.tool_choice = toolChoice;
+  if (chatTemplateKwargs !== undefined) body.chat_template_kwargs = chatTemplateKwargs;
+  const ctl = new AbortController();
+  let why = null, reader;
+  const abort = () => { why = "cancelled"; ctl.abort(); };
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  const timer = setTimeout(() => { why = "timeout"; ctl.abort(); }, timeoutMs + graceMs);
+  let text = "", reasoning = "";
+  const toolCallDeltas = [];
+  try {
+    const res = await fetch(findHubUrl() + "/api/link/chat", { method: "POST",
+      headers: { ...headers(), Accept: "text/event-stream" }, body: JSON.stringify(body), signal: ctl.signal });
+    if (!res.ok) {
+      let data = {}; try { data = await res.json(); } catch { /* use HTTP status */ }
+      yield { ...data, type: "error", ok: false, error: data.error || `http_${res.status}`, status: res.status };
+      return;
+    }
+    if (!res.headers.get("content-type")?.includes("text/event-stream")) {
+      yield { type: "error", ok: false, error: "protocol_error", detail: "Hub did not return SSE" };
+      return;
+    }
+    reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "", data = [];
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).replace(/\r$/, ""); buffer = buffer.slice(nl + 1);
+        if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+        else if (!line && data.length) {
+          const item = JSON.parse(data.join("\n")); data = [];
+          if (item.type === "text") text += item.delta || "";
+          if (item.type === "reasoning") reasoning += item.delta || "";
+          if (item.type === "tool_call") toolCallDeltas.push(item.delta);
+          yield item;
+          if (item.type === "finish" || item.type === "error") return;
+        }
+      }
+      if (done) break;
+    }
+    yield { type: "error", ok: false, error: why || "stream_interrupted", text, reasoning,
+            tool_call_deltas: toolCallDeltas, partial: Boolean(text || reasoning || toolCallDeltas.length) };
+  } catch (e) {
+    yield { type: "error", ok: false, error: why || "hub_down", detail: String(e?.message || e),
+            text, reasoning, tool_call_deltas: toolCallDeltas, partial: Boolean(text || reasoning || toolCallDeltas.length) };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+    ctl.abort();
+    if (reader) { try { await reader.cancel(); } catch { /* disconnected */ } reader.releaseLock(); }
+  }
 }
 
 /** Which model serves llm / vision / embed / tts now: `{ ok, llm: {available, model, provider, reason}, ... }`, or `{ ok: false, error: "hub_down" }`. */
@@ -628,6 +702,22 @@ export async function mailMessages({ sinceId = 0, limit = 100, full = true, inte
 export async function mailClaim(ids, kind, ref, { timeoutMs = 10000 } = {}) {
   const { status: st, data } = await post("/api/mail/claim", { ids: (ids || []).map(Number), kind: String(kind || ""), ref: String(ref || "") }, timeoutMs);
   return mailAnswer(st, data);
+}
+
+/** Outbound mail uses the gateway even when inbox polling is disabled. No retries. */
+export async function mailSendStatus({ timeoutMs = 10000 } = {}) {
+  const { status: st, data } = await mailGet("/api/mail/accounts", timeoutMs);
+  return { ...mailAnswer(st, data), via: "hub" };
+}
+
+export async function mailCompose(body, { timeoutMs = 70000 } = {}) {
+  const { status: st, data } = await post("/api/mail/compose", body, timeoutMs);
+  const answer = { ...mailAnswer(st, data), via: "hub" };
+  if (st === null) Object.assign(answer, { kind: "hub_down", state: "unknown", sent: false });
+  else if (st === 404) answer.kind = "tool_missing";
+  else if (st === 401) answer.kind = "auth";
+  else if (!answer.ok) answer.kind ||= "tool_error";
+  return answer;
 }
 
 /** Copy one attachment (an element of a message's attachments) into destDir; resolves to the new path, or "" when it cannot be had.

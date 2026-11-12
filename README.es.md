@@ -262,3 +262,10 @@ En Movimientos, **Crear parecido** abre un borrador independiente desde un ingre
 **Añadir movimiento** usa la creación nativa existente y asigna un ID nuevo. El resultado es manual, sin documentos, origen o hash de importación, relación de traspaso ni repartos heredados. El original y el borrador de entrada rápida permanecen intactos; abrir/cancelar no crea registros. La acción no aparece para las mitades de un traspaso, que conserva su formulario propio. No programa pagos ni repite movimientos automáticamente.
 
 Un error conserva los campos. Si escribes mientras se envía, el movimiento guardado usa los campos enviados y el diálogo mantiene los cambios posteriores sin añadir, junto al ID creado. Cerrar no cancela una creación ya enviada; el listado se actualiza cuando se confirma. Una instancia cerrada no cierra otro borrador. Interfaz castellana de escritorio y móvil; API/MCP y sus49 herramientas, motor, dependencias y datos originales se conservan.
+
+
+## Enviar avisos de cobro
+
+**Enviar** en Cobros y la herramienta `receivable_send` usan el servicio mail del Hub desde la cuenta conectada. Solo la aceptaci?n de SMTP marca el aviso como enviado y guarda la fecha. Si falta el servicio o falla, se conserva el borrador editable con el motivo y el texto para copiar; no se reintenta ni se cambia de remitente autom?ticamente.
+
+El env?o autom?tico est? apagado por defecto. Su casilla en **Plazos y tono** solo env?a los nuevos avisos preparados. El aviso del d?a 14 sigue siendo interno. El Hub que sirve correo debe poder acceder a la cuenta conectada; las credenciales permanecen en Faustus.

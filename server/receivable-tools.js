@@ -5,7 +5,7 @@ import * as rec from "./receivables.js";
 import { fail, amountField, tool, RO } from "./agent-helpers.js";
 import { parseDate } from "./dates.js";
 
-export const RECEIVABLE_INSTRUCTIONS = `Cobros: invoices the user issued to clients. receivables_list shows what is pending, overdue, paid or paused with the days late; receivable_add records one (client, amount, due date, and the client's email when the user gives it); receivable_update changes it, pauses it or marks it paid. The chase runs once a day on its own: day 1 a plain reminder, day 7 a firmer one with the amount, the reference and how to pay, day 14 no mail to the client but a notification to the user with the client's whole history. The texts are drafts: receivable_drafts lists them, receivable_send sends one through the family's mail helper (if it cannot send, the text comes back to copy) and a draft can be discarded. Never send a notice without the user asking. A payment found in the ledger that matches a pending invoice is only proposed: the user accepts it in the Cobros screen and the invoice is marked paid.`;
+export const RECEIVABLE_INSTRUCTIONS = `Cobros: invoices the user issued to clients. receivables_list shows what is pending, overdue, paid or paused with the days late; receivable_add records one (client, amount, due date, and the client's email when the user gives it); receivable_update changes it, pauses it or marks it paid. The chase runs once a day on its own: day 1 a plain reminder, day 7 a firmer one with the amount, the reference and how to pay, day 14 no mail to the client but a notification to the user with the client's whole history. Automatic sending is off by default and only sends new notices after the user enables it. Otherwise the texts are drafts: receivable_drafts lists them, receivable_send sends one through the family's mail service (if it cannot send, the text comes back to copy) and a draft can be discarded. Never send a notice without the user asking. A payment found in the ledger that matches a pending invoice is only proposed: the user accepts it in the Cobros screen and the invoice is marked paid.`;
 
 const findReceivable = (ref) => {
   const text = String(ref || "").trim();
@@ -85,12 +85,12 @@ export const RECEIVABLE_TOOLS = [
     }),
 
   tool("receivable_drafts",
-    "List the reminder drafts waiting to be sent, with the client, the amount and the text. Borradores de aviso.\nEach draft has id, receivable_id, step (1 reminder, 2 firmer, 0 thank-you), subject and body. Edit one with the API or send it with receivable_send. A draft is never sent by itself.\nSinónimos: borradores, avisos por enviar, recordatorios preparados, textos de cobro, revisar antes de enviar",
+    "List the reminder drafts waiting to be sent, with the client, the amount and the text. Borradores de aviso.\nEach draft has id, receivable_id, step (1 reminder, 2 firmer, 0 thank-you), subject and body. Edit one with the API or send it with receivable_send. Automatic sending is off by default; it only runs for new notices when the user enabled it in settings.\nSinónimos: borradores, avisos por enviar, recordatorios preparados, textos de cobro, revisar antes de enviar",
     z.object({}), RO,
     () => ({ drafts: rec.listDrafts() })),
 
   tool("receivable_send",
-    "Send one reminder draft to the client through the family's mail helper. Enviar aviso de cobro.\nnotice_id from receivable_drafts. If the mail cannot be sent, nothing is marked as sent: the answer carries the text ready to copy and the reason. Ask the user before sending.\nSinónimos: enviar aviso, mandar recordatorio, enviar el correo de cobro, reclamar por correo, enviar factura",
+    "Send one reminder draft to the client through the family's mail service. Enviar aviso de cobro.\nnotice_id from receivable_drafts. If the mail cannot be sent, nothing is marked as sent: the answer carries the text ready to copy and the reason. Ask the user before sending.\nSinónimos: enviar aviso, mandar recordatorio, enviar el correo de cobro, reclamar por correo, enviar factura",
     z.object({ notice_id: z.string().min(1) }), { openWorldHint: true },
     async ({ notice_id }) => rec.sendNotice(notice_id)),
 

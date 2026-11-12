@@ -258,9 +258,10 @@ export default function Cobros() {
   const check = async () => {
     const out = await run(() => api.receivables.check(), null);
     if (out) {
-      const n = out.drafts.length;
+      const sent = out.drafts.filter((d) => d.delivery?.sent).length;
+      const n = out.drafts.length - sent;
       const e = out.escalated.length;
-      notify({ kind: "ok", text: n || e ? `${n} ${n === 1 ? "borrador" : "borradores"} y ${e} ${e === 1 ? "aviso al usuario" : "avisos al usuario"}.` : "No hay nada nuevo que reclamar." });
+      notify({ kind: "ok", text: n || e || sent ? `${n} ${n === 1 ? "borrador" : "borradores"}, ${sent} ${sent === 1 ? "correo enviado" : "correos enviados"} y ${e} ${e === 1 ? "aviso al usuario" : "avisos al usuario"}.` : "No hay nada nuevo que reclamar." });
       await load();
     }
   };
@@ -453,6 +454,13 @@ export default function Cobros() {
                 <input type="checkbox" checked={data.settings.auto_draft}
                   onChange={async (e) => { const out = await run(() => api.receivables.saveSettings({ auto_draft: e.target.checked }), "Guardado."); if (out) await load(); }} />
                 Preparar los borradores sola cada mañana
+              </label>
+              <label className="flex items-start gap-2 text-[13px] sm:col-span-2">
+                <input type="checkbox" checked={Boolean(data.settings.auto_send)} disabled={busy}
+                  onChange={async (e) => { const out = await run(() => api.receivables.saveSettings({ auto_send: e.target.checked }), "Guardado."); if (out) await load(); }} />
+                <span>Enviar automáticamente los nuevos avisos preparados
+                  <span className="block text-muted">Salen desde tu cuenta conectada. Si el envío falla, el aviso queda como borrador para revisarlo.</span>
+                </span>
               </label>
             </div>
           </Section>

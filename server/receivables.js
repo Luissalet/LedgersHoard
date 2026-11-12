@@ -17,7 +17,7 @@ import { appLink } from "./family.js";
 import { merchantMatches } from "./mail-match.js";
 import { fold } from "./hoard-commons/text.js";
 import { chat } from "./hoard-link.js";
-import { mailSource } from "./mail-source.js";
+import { mailSend } from "./hoard-commons/fam-services.js";
 
 const fail = (message, status = 400, extra = {}) => { throw Object.assign(new Error(message), { status, ...extra }); };
 const money = (cents, currency = "EUR") => formatCents(cents, currency === "EUR" ? "€" : currency);
@@ -35,6 +35,7 @@ export const RECEIVABLE_KEYS = {
   escalate_days: ["receivables.escalate_days", 14],
   tone: ["receivables.tone", "sobrio"],
   auto_draft: ["receivables.auto_draft", 1],
+  auto_send: ["receivables.auto_send", 0],
   use_model: ["receivables.use_model", 1],
   signature: ["receivables.signature", ""],
 };
@@ -47,6 +48,7 @@ export const settingsPatch = z.object({
   escalate_days: z.number().int().min(2).max(365),
   tone: z.enum(TONES),
   auto_draft: flag,
+  auto_send: flag,
   use_model: flag,
   signature: z.string().trim().max(120),
 }).partial().strict();
@@ -55,6 +57,7 @@ export function receivableSettings() {
   const out = {};
   for (const [name, [key, fallback]] of Object.entries(RECEIVABLE_KEYS)) out[name] = getSetting(key, fallback);
   out.auto_draft = Boolean(Number(out.auto_draft));
+  out.auto_send = Boolean(Number(out.auto_send));
   out.use_model = Boolean(Number(out.use_model));
   return out;
 }
@@ -400,7 +403,17 @@ export async function checkReceivables({ today = todayLocal(), settings = receiv
     const draft = await draftFor(r, step, days, settings);
     const notice = insertNotice({ receivable_id: r.id, step, channel: "email", subject: draft.subject, body: draft.body, state: "draft" });
     if (!notice) continue;
-    created.push({ notice: presentNotice(notice), receivable: present(r, { today }), source: draft.source });
+    let delivery = null;
+    if (settings.auto_send) {
+      try { delivery = await sendNotice(notice.id, { settings }); }
+      catch (error) {
+        const reason = String(error?.message || error).slice(0, 200);
+        db().prepare("UPDATE receivable_notices SET error = ? WHERE id = ?").run(reason, notice.id);
+        delivery = { sent: false, error: reason };
+      }
+    }
+    created.push({ notice: presentNotice(getNotice(notice.id)), receivable: present(r, { today }), source: draft.source,
+      ...(delivery ? { delivery } : {}) });
   }
   return { ok: true, today, checked: rows.length, drafts: created, escalated };
 }
@@ -415,6 +428,7 @@ export function listDrafts() {
 }
 
 export function updateNotice(id, patch) {
+  if (sending.has(id)) fail("Ese aviso se está enviando.", 409);
   const notice = getNotice(id) || fail("No existe ese aviso.", 404);
   if (notice.state === "sent") fail("Ese aviso ya se envió: no se puede cambiar.", 409);
   const data = z.object({ subject: z.string().trim().max(300).optional(), body: z.string().trim().min(1).max(8000).optional() }).strict().parse(patch || {});
@@ -425,6 +439,7 @@ export function updateNotice(id, patch) {
 }
 
 export function discardNotice(id) {
+  if (sending.has(id)) fail("Ese aviso se está enviando.", 409);
   const notice = getNotice(id) || fail("No existe ese aviso.", 404);
   if (notice.state === "sent") fail("Ese aviso ya se envió.", 409);
   db().prepare("UPDATE receivable_notices SET state = 'discarded' WHERE id = ?").run(notice.id);
@@ -436,28 +451,31 @@ export function discardNotice(id) {
  * mail). When it cannot send, the text comes back ready to copy and the notice
  * stays a draft with the reason.
  */
-export async function sendNotice(id, { source = mailSource(), settings = receivableSettings() } = {}) {
+const sending = new Set();
+export async function sendNotice(id, { sendMail = mailSend, settings = receivableSettings() } = {}) {
+  if (sending.has(id)) fail("Ese aviso se está enviando.", 409);
   const notice = getNotice(id) || fail("No existe ese aviso.", 404);
-  if (notice.state === "sent") fail("Ese aviso ya se envió.", 409);
+  if (notice.state !== "draft") fail("Solo se puede enviar un borrador pendiente.", 409);
   const r = getReceivable(notice.receivable_id) || fail("La factura de ese aviso ya no existe.", 404);
+  if (r.status === "paused" || (r.status === "paid" && notice.step !== 0)) fail("Esa factura está pausada o cobrada.", 409);
   if (!r.email) fail("La factura no tiene el correo del cliente: añádelo antes de enviar.", 400);
   const copy = { to: r.email, subject: notice.subject, body: notice.body };
-  let answer;
+  sending.add(id);
   try {
-    answer = await source.call("send", {
-      to: [r.email], subject: notice.subject, text: notice.body,
-      ...(settings.signature ? { from_name: settings.signature } : {}),
-    });
-  } catch (error) {
-    answer = { ok: false, error: String(error?.message || error).slice(0, 200) };
-  }
-  if (!answer?.ok) {
-    const reason = String(answer?.error || "el correo no ha salido").slice(0, 200);
-    db().prepare("UPDATE receivable_notices SET error = ? WHERE id = ?").run(reason, notice.id);
-    return { sent: false, error: reason, copy, notice: presentNotice(getNotice(notice.id)) };
-  }
-  db().prepare("UPDATE receivable_notices SET state = 'sent', sent_at = ?, error = '' WHERE id = ?").run(now(), notice.id);
-  return { sent: true, copy, notice: presentNotice(getNotice(notice.id)) };
+    let answer;
+    try {
+      answer = await sendMail([r.email], notice.subject, notice.body, { mode: "send", fromName: settings.signature || "" });
+    } catch (error) {
+      answer = { ok: false, error: String(error?.message || error).slice(0, 200) };
+    }
+    if (!answer?.ok || answer.state !== "sent" || answer.sent !== true) {
+      const reason = String(answer?.error || "el correo no ha salido").slice(0, 200);
+      db().prepare("UPDATE receivable_notices SET error = ? WHERE id = ?").run(reason, notice.id);
+      return { sent: false, error: reason, copy, delivery: answer, notice: presentNotice(getNotice(notice.id)) };
+    }
+    db().prepare("UPDATE receivable_notices SET state = 'sent', sent_at = ?, error = '' WHERE id = ?").run(now(), notice.id);
+    return { sent: true, copy, delivery: answer, notice: presentNotice(getNotice(notice.id)) };
+  } finally { sending.delete(id); }
 }
 
 // ---------------------------------------------------------------- reconciliation
