@@ -145,7 +145,7 @@ test("a document reference opens in the app that owns it, through the hub", asyn
 test("mail.source auto reads from the hub, registers what it wants, claims each payment and resumes after the watermark", async () => {
   const hub = fakeHub({ messages: [hubMessage(5, "netflix"), hubMessage(6, "spotify11")] });
   const own = fakeSource([MAIL.paypal]);
-  const router = createMailSource({ runHelper: helperOf(own) });
+  const router = createMailSource({ runHelper: helperOf(own), clock: () => Date.parse("2026-10-09T12:00:00Z") });
   setMailSource(router);
   const out = await engine.scanMail({ trigger: "test", source: router, nowMs: Date.parse("2026-10-09T12:00:00Z") });
   assert.equal(out.ok, true);

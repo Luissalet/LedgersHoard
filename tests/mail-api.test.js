@@ -1,4 +1,4 @@
-import { test, before, after, beforeEach } from "node:test";
+import { test, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer } from "./helpers.js";
 import { MAIL } from "./mail-fixtures.js";
@@ -123,7 +123,10 @@ test("mail_paste, mail_spending, subscriptions and notifications tools", async (
   assert.equal(list.body.totals[0].yearly_text, "143,88 €");
   const id = list.body.subscriptions[0].id;
 
-  const up = await s.agent("subscriptions_upcoming", { days: 365 });
+  // A charge dated in the past is worked forward from today, so pin the clock to the month the receipt came from.
+  mock.timers.enable({ apis: ["Date"], now: new Date(2026, 9, 15, 12).getTime() });
+  let up;
+  try { up = await s.agent("subscriptions_upcoming", { days: 365 }); } finally { mock.timers.reset(); }
   assert.equal(up.body.upcoming[0].merchant, "Spotify");
   assert.equal(up.body.upcoming[0].date, "2026-11-12");
 
