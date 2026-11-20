@@ -66,7 +66,7 @@ test("runner contract: python, helper and folder as arguments, request on stdin,
   const calls = [];
   const spawnFn = fakeSpawn('noise line\n{"ok": true, "messages": [], "accounts": []}\n', { calls });
   const source = createMailSource({
-    settings: settingsOf({ "mail.faustus_dir": dir, "mail.faustus_owner": "luis", "mail.source": "faustus" }), spawnFn, hub: NO_HUB,
+    settings: settingsOf({ "mail.faustus_dir": dir, "mail.faustus_owner": "sample-owner", "mail.source": "faustus" }), spawnFn, hub: NO_HUB,
     env: { LEDGER_DATA_DIR: "/secret", PATH: "/bin" },
   });
   const out = await source.scan({ since_days: 30, skip: ["<a@b>"], query: "", gmail_query: "(recibo)", subject_terms: ["recibo"] });
@@ -81,7 +81,7 @@ test("runner contract: python, helper and folder as arguments, request on stdin,
   assert.equal("LEDGER_DATA_DIR" in call.options.env, false, "the app's own variables are not passed on");
   const request = JSON.parse(call.input);
   assert.equal(request.action, "scan");
-  assert.equal(request.owner, "luis");
+  assert.equal(request.owner, "sample-owner");
   assert.equal(request.max, 300);
   assert.equal(request.since_days, 30);
   assert.deepEqual(request.skip, ["<a@b>"]);

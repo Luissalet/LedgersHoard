@@ -176,7 +176,7 @@ test("mail_status through the tool and the routes", async () => {
 test("settings route: defaults, validation, and the account is stored as an id", async () => {
   const defaults = (await s.call("GET", "/api/mail/settings")).body;
   assert.deepEqual(defaults, { enabled: true, auto_record: true, account: "", interval_min: 15, first_days: 62, window_days: 14, min_confidence: 70, review_above: 500, toast: true, hub: true, quiet_history: true, faustus_dir: "", faustus_owner: "", source: "auto", notify_via: "auto" });
-  const put = await s.call("PUT", "/api/mail/settings", { interval_min: 30, auto_record: false, account: "Banco", faustus_owner: "luis", toast: false });
+  const put = await s.call("PUT", "/api/mail/settings", { interval_min: 30, auto_record: false, account: "Banco", faustus_owner: "sample-owner", toast: false });
   assert.equal(put.status, 200, JSON.stringify(put.body));
   assert.equal(put.body.interval_min, 30);
   assert.equal(put.body.auto_record, false);

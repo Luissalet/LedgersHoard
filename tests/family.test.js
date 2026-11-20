@@ -392,20 +392,20 @@ test("split_add refuses what cannot be split: income, transfers, over-allocation
 test("split_add: shares given as fractions always add up to the expense (largest remainder, nothing over the total)", async () => {
   fakeHub({ people: [] });
   const odd = add("2026-10-01", -101, "Cafe Demo");
-  const halves = (await tool("split_add", { tx_id: odd.id, participants: [{ person: "Ana", share: 50 }, { person: "Luis", share: 50 }] })).body;
+  const halves = (await tool("split_add", { tx_id: odd.id, participants: [{ person: "Participante A", share: 50 }, { person: "Participante B", share: 50 }] })).body;
   assert.equal(halves.ok, true, JSON.stringify(halves));
   assert.equal(halves.participants.reduce((a, p) => a + p.share_cents, 0), 101, "two halves of 1,01 EUR are the whole expense");
   assert.equal(halves.my_share_cents, 0);
   const thirds = add("2026-10-02", -10000, "Cena Demo");
-  const t = (await tool("split_add", { tx_id: thirds.id, participants: [{ person: "Ana", share: 1 / 3 }, { person: "Luis", share: 1 / 3 }, { person: "Eva", share: 1 / 3 }] })).body;
+  const t = (await tool("split_add", { tx_id: thirds.id, participants: [{ person: "Participante A", share: 1 / 3 }, { person: "Participante B", share: 1 / 3 }, { person: "Participante C", share: 1 / 3 }] })).body;
   assert.equal(t.participants.reduce((a, p) => a + p.share_cents, 0), 10000);
   assert.deepEqual(t.participants.map((p) => p.share_cents).sort(), [3333, 3333, 3334]);
   // what stays with the user is what was not given away, to the cent
   const part = add("2026-10-03", -1001, "Taxi Demo");
-  const q = (await tool("split_add", { tx_id: part.id, participants: [{ person: "Ana", share: 0.25 }] })).body;
+  const q = (await tool("split_add", { tx_id: part.id, participants: [{ person: "Participante A", share: 0.25 }] })).body;
   assert.equal(q.participants[0].share_cents + q.my_share_cents, 1001);
   // more than the whole is still refused
-  const over = (await tool("split_add", { tx_id: part.id, participants: [{ person: "Ana", share: 60 }, { person: "Luis", share: 60 }] })).body;
+  const over = (await tool("split_add", { tx_id: part.id, participants: [{ person: "Participante A", share: 60 }, { person: "Participante B", share: 60 }] })).body;
   assert.match(over.error, /Reparto/);
 });
 
